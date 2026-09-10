@@ -33,13 +33,23 @@ class EmberStorage:
 
     @contextmanager
     def _connection(self) -> Generator[sqlite3.Connection, None, None]:
-        """Context manager guaranteeing connection closure and proper locking."""
+        """Context manager guaranteeing connection closure, rollback, and proper locking."""
         conn = sqlite3.connect(str(self.db_path), timeout=10.0)
         conn.row_factory = sqlite3.Row
         try:
             yield conn
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
         finally:
             conn.close()
+
+    def close(self) -> None:
+        """Explicit cleanup hook for application shutdown."""
+        pass
 
     def _ensure_tables(self) -> None:
         """Initialize database tables and indexes."""
@@ -201,34 +211,28 @@ class EmberStorage:
     def get_history(self, limit: int = 50) -> List[Song]:
         """Fetch recently played tracks (newest first, unique tracks preserved)."""
         songs: List[Song] = []
-        seen = set()
         try:
             with self._connection() as conn:
                 cursor = conn.execute(
                     """
-                    SELECT video_id, title, artist, duration, artwork_url
+                    SELECT video_id, title, artist, duration, artwork_url, MAX(played_at) AS last_played
                     FROM history
-                    ORDER BY played_at DESC
+                    GROUP BY video_id
+                    ORDER BY last_played DESC
                     LIMIT ?;
                     """,
-                    (limit * 2,),
+                    (limit,),
                 )
                 for row in cursor.fetchall():
-                    vid = row["video_id"]
-                    if vid in seen:
-                        continue
-                    seen.add(vid)
                     songs.append(
                         Song(
-                            video_id=vid,
+                            video_id=row["video_id"],
                             title=row["title"],
                             artist=row["artist"],
                             duration=row["duration"] or "",
                             artwork_url=row["artwork_url"] or "",
                         )
                     )
-                    if len(songs) >= limit:
-                        break
         except Exception as exc:
             log.error("Failed to fetch playback history: %s", exc)
         return songs
