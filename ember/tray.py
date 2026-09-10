@@ -5,6 +5,8 @@ The tray presence and the single-instance guard.
 The Ember mark is painted at runtime from the same Palette the panel uses.
 Nothing binary ships with the project, and the mark re-renders cleanly at every
 size the shell asks for instead of being resampled from one bitmap.
+
+# Extended/upgraded by Taezeem (@taezeem14) — fork of Ember
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
 
 # ------------------------------------------------------------------ the mark
 def ember_mark(side: int = 256) -> QPixmap:
-    """A rounded ember: warm flame on a dark tile, drawn with the panel palette."""
+    """A rounded ember: warm flame on a dark tile, drawn with the active Palette."""
     canvas = QPixmap(side, side)
     canvas.fill(Qt.GlobalColor.transparent)
 

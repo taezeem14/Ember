@@ -7,6 +7,8 @@ z-order forcing and the expand/collapse resize all stay in one place. Every
 colour comes from config.Palette via theme.panel_stylesheet() — the only
 painted widgets are the ones Qt stylesheets cannot express (the vinyl disc,
 the volume dial, the equaliser bars).
+
+# Extended/upgraded by Taezeem (@taezeem14) — fork of Ember
 """
 
 from __future__ import annotations
@@ -15,10 +17,9 @@ import logging
 import sys
 from typing import Callable, Dict, List, Optional, Tuple
 
-from PyQt6.QtCore import QPoint, QRectF, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QPoint, QRectF, QSettings, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
-    QFont,
     QLinearGradient,
     QPainter,
     QPainterPath,
@@ -33,8 +34,6 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
-    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -51,14 +50,23 @@ from .config import (
     PANEL_WIDTH,
     Palette,
     QUEUE_VIEW_HEIGHT,
+    SEARCH_DEBOUNCE_MS,
+    SETTINGS_AUTO_QUEUE,
+    SETTINGS_HOTKEYS,
+    SETTINGS_NORMALIZE_VOLUME,
+    SETTINGS_THEME,
+    SETTINGS_TOAST_ENABLED,
     SHELL_MARGIN,
     VINYL_DEGREES,
     VINYL_TICK_MS,
 )
-from .jobs import ArtJob
+from .jobs import ArtJob, SearchJob
 from .models import Song
 from .player import PlaybackCore
+from .settings_dialog import DEFAULT_HOTKEYS, SettingsDialog
+from .storage import EmberStorage
 from .theme import panel_stylesheet
+from .toast import NowPlayingToast
 from .utils import clock, elide_into, looks_like_link, pretty_count
 
 log = logging.getLogger(__name__)
@@ -101,49 +109,98 @@ class Hairline(QFrame):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setFixedHeight(1)
+        self.reload_theme()
+
+    def reload_theme(self) -> None:
         self.setStyleSheet(f"background: {Palette.line}; border: none;")
 
 
-class SeekBar(QSlider):
-    """Horizontal slider that jumps straight to wherever you click."""
+class SeekBar(QWidget):
+    """Horizontal progress bar that supports smooth scrubbing and direct jumping."""
 
     scrubbed = pyqtSignal(int)
     released = pyqtSignal(int)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
-        super().__init__(Qt.Orientation.Horizontal, parent)
+        super().__init__(parent)
         self.setObjectName("Seek")
-        self.setRange(0, 0)
-        self.setSingleStep(1000)
-        self.setPageStep(10000)
         self.setFixedHeight(18)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._minimum = 0
+        self._maximum = 0
+        self._value = 0
         self._scrubbing = False
+
+    def setRange(self, minimum: int, maximum: int) -> None:  # noqa: N802
+        self._minimum = max(0, int(minimum))
+        self._maximum = max(self._minimum, int(maximum))
+        self._value = max(self._minimum, min(self._value, self._maximum))
+        self.update()
+
+    def setValue(self, value: int) -> None:  # noqa: N802
+        clamped = max(self._minimum, min(int(value), self._maximum))
+        if clamped != self._value:
+            self._value = clamped
+            self.update()
+
+    def value(self) -> int:
+        return self._value
 
     def _value_at(self, x: int) -> int:
         span = max(1, self.width())
         ratio = min(1.0, max(0.0, x / span))
-        return int(self.minimum() + ratio * (self.maximum() - self.minimum()))
+        return int(self._minimum + ratio * (self._maximum - self._minimum))
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt naming
+    def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
             self._scrubbing = True
-            value = self._value_at(int(event.position().x()))
-            self.setValue(value)
-            self.scrubbed.emit(value)
-        super().mousePressEvent(event)
+            val = self._value_at(int(event.position().x()))
+            self.setValue(val)
+            self.scrubbed.emit(val)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         if self._scrubbing:
-            value = self._value_at(int(event.position().x()))
-            self.setValue(value)
-            self.scrubbed.emit(value)
-        super().mouseMoveEvent(event)
+            val = self._value_at(int(event.position().x()))
+            self.setValue(val)
+            self.scrubbed.emit(val)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if self._scrubbing:
             self._scrubbing = False
             self.released.emit(self.value())
-        super().mouseReleaseEvent(event)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        y = (self.height() - 5) / 2.0
+        w = float(self.width())
+        track_rect = QRectF(0, y, w, 5.0)
+
+        # Background track
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(Palette.raised))
+        painter.drawRoundedRect(track_rect, 2.5, 2.5)
+
+        # Active progress fill
+        span = self._maximum - self._minimum
+        ratio = (self._value - self._minimum) / span if span > 0 else 0.0
+        fill_w = max(0.0, w * ratio)
+        if fill_w > 0:
+            fill_rect = QRectF(0, y, fill_w, 5.0)
+            grad = QLinearGradient(0, 0, w, 0)
+            grad.setColorAt(0.0, QColor(Palette.amber_lo))
+            grad.setColorAt(1.0, QColor(Palette.amber_hi))
+            painter.setBrush(grad)
+            painter.drawRoundedRect(fill_rect, 2.5, 2.5)
+
+        # Handle knob
+        handle_x = min(w - 9, max(0.0, fill_w - 4.5))
+        handle_rect = QRectF(handle_x, y - 2, 9.0, 9.0)
+        painter.setBrush(QColor(Palette.text))
+        painter.setPen(QPen(QColor(Palette.amber), 2.0))
+        painter.drawEllipse(handle_rect)
+        painter.end()
 
 
 class VinylDisc(QWidget):
@@ -321,7 +378,7 @@ class VolumeDial(QWidget):
 
 
 class QueueRow(QFrame):
-    """One line in the up-next list. Clicking it plays that index."""
+    """One line in the queue / library list. Clicking it plays that item."""
 
     picked = pyqtSignal(int)
 
@@ -386,36 +443,48 @@ class QueueRow(QFrame):
 
         if self._active:
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(232, 164, 104, 26))
+            painter.setBrush(QColor(Palette.amber_lo))
+            painter.setOpacity(0.20)
+            painter.drawRoundedRect(QRectF(0, 1, self.width(), self.height() - 2), 9, 9)
+            painter.setOpacity(1.0)
+            painter.setBrush(QColor(Palette.amber))
+            painter.drawRoundedRect(QRectF(3, 9, 2.5, self.height() - 18), 1.25, 1.25)
         elif self._hover:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(244, 233, 221, 14))
-        else:
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(QRectF(0, 1, self.width(), self.height() - 2), 9, 9)
-
-        if self._active:
-            painter.setBrush(QColor(Palette.amber))
-            painter.drawRoundedRect(QRectF(3, 9, 2.5, self.height() - 18), 1.25, 1.25)
+            painter.drawRoundedRect(QRectF(0, 1, self.width(), self.height() - 2), 9, 9)
         painter.end()
 
 
 # ----------------------------------------------------------------- main surface
 class FloatingPanel(QWidget):
-    """Compact ribbon that expands into the full Ember panel."""
+    """Compact ribbon that expands into the full Ember panel with favorites, history, and search."""
 
     closed = pyqtSignal()
     endless_toggled = pyqtSignal(bool)
+    theme_reloaded = pyqtSignal(str)
 
-    def __init__(self, core: PlaybackCore, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        core: PlaybackCore,
+        storage: Optional[EmberStorage] = None,
+        settings: Optional[QSettings] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
         self.core = core
+        self.storage = storage
+        self.settings = settings or QSettings()
         self.expanded = False
+
         self._drag_offset: Optional[QPoint] = None
         self._scrubbing = False
         self._art_cache: Dict[str, QPixmap] = {}
         self._art_pending: set = set()
+        self._active_tab = "queue"  # "queue", "favorites", "history"
+        self._view_songs: List[Song] = []
+
+        self.toast = NowPlayingToast()
 
         self.setWindowTitle(APP_NAME)
         self.setWindowFlags(
@@ -479,6 +548,9 @@ class FloatingPanel(QWidget):
         words.addWidget(self.ribbon_artist)
         row.addLayout(words, 1)
 
+        self.ribbon_fav = self._heart_button()
+        row.addWidget(self.ribbon_fav)
+
         self.ribbon_prev = self._ghost("⏮", 26)
         self.ribbon_play = self._round("▶", 38)
         self.ribbon_next = self._ghost("⏭", 26)
@@ -505,9 +577,10 @@ class FloatingPanel(QWidget):
         column.addLayout(self._build_header())
         column.addWidget(self._build_now_card())
         column.addLayout(self._build_search())
-        column.addWidget(self._section("up next"))
+        column.addLayout(self._build_tabs_row())
         column.addWidget(self._build_queue())
-        column.addWidget(Hairline(holder))
+        self.panel_hairline = Hairline(holder)
+        column.addWidget(self.panel_hairline)
         column.addLayout(self._build_footer())
 
         return holder
@@ -568,6 +641,9 @@ class FloatingPanel(QWidget):
         words.addStretch(1)
         top.addLayout(words, 1)
 
+        self.hero_fav = self._heart_button()
+        top.addWidget(self.hero_fav, 0, Qt.AlignmentFlag.AlignTop)
+
         column.addLayout(top)
 
         seek_row = QHBoxLayout()
@@ -611,6 +687,35 @@ class FloatingPanel(QWidget):
 
         return row
 
+    def _build_tabs_row(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+
+        self.tab_queue = QPushButton("UP NEXT", self)
+        self.tab_queue.setObjectName("TabButton")
+        self.tab_queue.setCheckable(True)
+        self.tab_queue.setChecked(True)
+
+        self.tab_favs = QPushButton("FAVORITES", self)
+        self.tab_favs.setObjectName("TabButton")
+        self.tab_favs.setCheckable(True)
+
+        self.tab_history = QPushButton("HISTORY", self)
+        self.tab_history.setObjectName("TabButton")
+        self.tab_history.setCheckable(True)
+
+        row.addWidget(self.tab_queue)
+        row.addWidget(self.tab_favs)
+        row.addWidget(self.tab_history)
+        row.addStretch(1)
+
+        self.tab_queue.clicked.connect(lambda: self._switch_tab("queue"))
+        self.tab_favs.clicked.connect(lambda: self._switch_tab("favorites"))
+        self.tab_history.clicked.connect(lambda: self._switch_tab("history"))
+
+        return row
+
     def _build_queue(self) -> QWidget:
         self.queue_scroll = QScrollArea(self)
         self.queue_scroll.setObjectName("QueueScroll")
@@ -651,6 +756,11 @@ class FloatingPanel(QWidget):
         self.volume = VolumeDial(self.core.volume(), self)
         row.addWidget(self.volume, 0, Qt.AlignmentFlag.AlignVCenter)
 
+        self.settings_btn = self._pill("⚙", 26)
+        self.settings_btn.setToolTip("preferences & tunables")
+        self.settings_btn.clicked.connect(self._open_settings)
+        row.addWidget(self.settings_btn)
+
         self.quit = self._pill("✕", 26)
         self.quit.setObjectName("PillClose")
         self.quit.setToolTip("close Ember")
@@ -669,6 +779,15 @@ class FloatingPanel(QWidget):
         )
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         return label
+
+    def _heart_button(self) -> QPushButton:
+        btn = QPushButton("♡", self)
+        btn.setObjectName("HeartButton")
+        btn.setFixedSize(26, 26)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setToolTip("pin to favorites")
+        btn.clicked.connect(self._toggle_favorite)
+        return btn
 
     def _ghost(self, glyph: str, side: int) -> QPushButton:
         button = QPushButton(glyph, self)
@@ -700,11 +819,6 @@ class FloatingPanel(QWidget):
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         return button
 
-    def _section(self, text: str) -> QLabel:
-        label = QLabel(text.upper(), self)
-        label.setObjectName("SectionLabel")
-        return label
-
     # ------------------------------------------------------------------- wiring
     def _wire(self) -> None:
         core = self.core
@@ -726,10 +840,16 @@ class FloatingPanel(QWidget):
 
         self.seek.scrubbed.connect(self._on_scrub)
         self.seek.released.connect(self._on_scrub_done)
-        self.seek.sliderMoved.connect(self._on_scrub)
 
         self.find.clicked.connect(self._on_find)
         self.field.returnPressed.connect(self._on_find)
+
+        # Search debounce timer (350ms)
+        self._debounce_timer = QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.setInterval(SEARCH_DEBOUNCE_MS)
+        self._debounce_timer.timeout.connect(self._on_debounced_search)
+        self.field.textChanged.connect(self._on_field_changed)
 
         self.volume.changed.connect(self._on_volume)
         self.endless.toggled.connect(self._on_endless)
@@ -738,6 +858,119 @@ class FloatingPanel(QWidget):
         self._notice_timer = QTimer(self)
         self._notice_timer.setSingleShot(True)
         self._notice_timer.timeout.connect(lambda: self._set_status("ready"))
+
+    # ------------------------------------------------------------- tabs & library
+    def _switch_tab(self, tab: str) -> None:
+        self._active_tab = tab
+        self.tab_queue.setChecked(tab == "queue")
+        self.tab_favs.setChecked(tab == "favorites")
+        self.tab_history.setChecked(tab == "history")
+        self._refresh_tab_content()
+
+    def _refresh_tab_content(self) -> None:
+        if self._active_tab == "queue":
+            self._render_song_list(self.core.queue, active_idx=self.core.cursor, empty_hint="search for something warm")
+        elif self._active_tab == "favorites":
+            favs = self.storage.get_favorites() if self.storage else []
+            self._render_song_list(favs, active_idx=-1, empty_hint="no favorites pinned yet — click ♡ to save")
+        elif self._active_tab == "history":
+            hist = self.storage.get_history() if self.storage else []
+            self._render_song_list(hist, active_idx=-1, empty_hint="no recently played history yet")
+
+    def _render_song_list(self, songs: List[Song], active_idx: int = -1, empty_hint: str = "") -> None:
+        self._view_songs = list(songs)
+        # Clear existing rows
+        for position in reversed(range(self.queue_list.count())):
+            widget = self.queue_list.itemAt(position).widget()
+            if isinstance(widget, QueueRow):
+                self.queue_list.takeAt(position)
+                widget.deleteLater()
+
+        if not songs:
+            self._empty.setText(empty_hint)
+            self._empty.setVisible(True)
+            self.count.setText("0 tracks")
+            return
+
+        self._empty.setVisible(False)
+        for index, song in enumerate(songs):
+            row = QueueRow(index, song, self.queue_host)
+            row.picked.connect(self._on_row_picked)
+            if index == active_idx:
+                row.set_active(True)
+            self.queue_list.insertWidget(index + 1, row)
+
+        self.count.setText(pretty_count(len(songs), "track"))
+
+    def _on_row_picked(self, index: int) -> None:
+        if not 0 <= index < len(self._view_songs):
+            return
+        picked_song = self._view_songs[index]
+        if self._active_tab == "queue":
+            self.core.play_at(index)
+        else:
+            # Play from favorites or history into the queue
+            self.core.play(picked_song, expand=True)
+
+    # ------------------------------------------------------------- favorites
+    def _toggle_favorite(self) -> None:
+        curr = self.core.current
+        if not curr or not self.storage:
+            return
+        if self.storage.is_favorite(curr.video_id):
+            self.storage.remove_favorite(curr.video_id)
+            self._update_favorite_buttons(False)
+            self._set_status("unpinned from favorites")
+        else:
+            self.storage.add_favorite(curr)
+            self._update_favorite_buttons(True)
+            self._set_status("pinned to favorites ♥")
+
+        if self._active_tab == "favorites":
+            self._refresh_tab_content()
+
+    def _update_favorite_buttons(self, is_fav: bool) -> None:
+        char = "♥" if is_fav else "♡"
+        color_style = f"color: {Palette.clay}; font-size: 15px;" if is_fav else f"color: {Palette.muted}; font-size: 14px;"
+        for btn in (self.ribbon_fav, self.hero_fav):
+            btn.setText(char)
+            btn.setStyleSheet(f"#HeartButton {{ {color_style} }}")
+
+    # ------------------------------------------------------------- settings
+    def _open_settings(self) -> None:
+        dlg = SettingsDialog(self.settings, self)
+        dlg.theme_changed.connect(self.reload_theme)
+        dlg.normalization_changed.connect(self.core.set_normalize_volume)
+        dlg.endless_changed.connect(self._on_endless_from_settings)
+        dlg.exec()
+
+    def _on_endless_from_settings(self, enabled: bool) -> None:
+        self.endless.blockSignals(True)
+        self.endless.setChecked(enabled)
+        self.endless.blockSignals(False)
+        self.core.set_auto_queue(enabled)
+
+    def reload_theme(self, theme_name: str = "") -> None:
+        """Apply newly selected theme across panel, dialogs, and custom-painted widgets."""
+        self.setStyleSheet(panel_stylesheet())
+        self.panel_hairline.reload_theme()
+        self.toast.reload_theme()
+
+        # Force repaint of custom-painted elements
+        self.disc.update()
+        self.volume.update()
+        self.seek.update()
+        self.update()
+
+        # Update favorite button color if active
+        curr = self.core.current
+        if curr and self.storage:
+            self._update_favorite_buttons(self.storage.is_favorite(curr.video_id))
+
+        if self.expanded:
+            self._refresh_tab_content()
+
+        self.theme_reloaded.emit(Palette.current_theme)
 
     # ------------------------------------------------------------- appearance
     def _apply_size(self) -> None:
@@ -751,6 +984,7 @@ class FloatingPanel(QWidget):
         self.ribbon.setVisible(False)
         self.panel.setVisible(True)
         self._apply_size()
+        self._refresh_tab_content()
         self.clamp_to_screen()
         self.ensure_topmost()
 
@@ -836,6 +1070,7 @@ class FloatingPanel(QWidget):
             self._art_cache.pop(next(iter(self._art_cache)), None)
         self._art_cache[song_id] = source
         self._paint_art(song_id, source)
+        self.toast.update_art(source)
 
     def _paint_art(self, song_id: str, source: QPixmap) -> None:
         current = self.core.current
@@ -848,13 +1083,18 @@ class FloatingPanel(QWidget):
     def _on_song(self, song: Song) -> None:
         elide_into(self.ribbon_title, song.title, self.ribbon_title.width() or 160)
         elide_into(self.ribbon_artist, song.byline, self.ribbon_artist.width() or 160)
-        elide_into(self.hero_title, song.title, 200)
-        elide_into(self.hero_artist, song.byline, 200)
+        elide_into(self.hero_title, song.title, 190)
+        elide_into(self.hero_artist, song.byline, 190)
 
         self.seek.setRange(0, 0)
         self.seek.setValue(0)
         self.elapsed.setText("0:00")
         self.total.setText("0:00")
+
+        # Check favorite status
+        if self.storage:
+            self._update_favorite_buttons(self.storage.is_favorite(song.video_id))
+            self.storage.record_history(song)
 
         cached = self._art_cache.get(song.video_id)
         if cached is not None:
@@ -864,34 +1104,23 @@ class FloatingPanel(QWidget):
             self.hero_art.clear()
             self._request_art(song)
 
+        # Show desktop toast if enabled
+        toast_enabled = str(self.settings.value(SETTINGS_TOAST_ENABLED, "true")).lower() in ("true", "1", "yes")
+        if toast_enabled:
+            self.toast.show_song(song, cached)
+
         self._set_status("tuning in")
 
     def _on_queue(self, songs: List[Song]) -> None:
-        for position in reversed(range(self.queue_list.count())):
-            widget = self.queue_list.itemAt(position).widget()
-            if isinstance(widget, QueueRow):
-                self.queue_list.takeAt(position)
-                widget.deleteLater()
-
-        if not songs:
-            self._empty.setVisible(True)
-            self.count.setText("0 tracks")
-            return
-
-        self._empty.setVisible(False)
-        for index, song in enumerate(songs):
-            row = QueueRow(index, song, self.queue_host)
-            row.picked.connect(self.core.play_at)
-            self.queue_list.insertWidget(index + 1, row)
-
-        self.count.setText(pretty_count(len(songs), "track"))
-        self._on_cursor(self.core.cursor)
+        if self._active_tab == "queue":
+            self._render_song_list(songs, active_idx=self.core.cursor, empty_hint="search for something warm")
 
     def _on_cursor(self, index: int) -> None:
-        for position in range(self.queue_list.count()):
-            widget = self.queue_list.itemAt(position).widget()
-            if isinstance(widget, QueueRow):
-                widget.set_active(widget.index == index)
+        if self._active_tab == "queue":
+            for position in range(self.queue_list.count()):
+                widget = self.queue_list.itemAt(position).widget()
+                if isinstance(widget, QueueRow):
+                    widget.set_active(widget.index == index)
 
     def _on_playing(self, playing: bool) -> None:
         self.ribbon_play.setText("⏸" if playing else "▶")
@@ -928,7 +1157,21 @@ class FloatingPanel(QWidget):
         self._scrubbing = False
         self.core.seek(position)
 
+    # ------------------------------------------------------------- debounced search
+    def _on_field_changed(self, text: str) -> None:
+        raw = text.strip()
+        if len(raw) >= 3 and not looks_like_link(raw):
+            self._debounce_timer.start()
+        else:
+            self._debounce_timer.stop()
+
+    def _on_debounced_search(self) -> None:
+        text = self.field.text().strip()
+        if len(text) >= 3 and not looks_like_link(text):
+            self._execute_search(text)
+
     def _on_find(self) -> None:
+        self._debounce_timer.stop()
         text = self.field.text().strip()
         if not text:
             return
@@ -936,24 +1179,21 @@ class FloatingPanel(QWidget):
             self.core.open_link(text)
             self.field.clear()
             return
+        self._execute_search(text)
+
+    def _execute_search(self, query: str) -> None:
         self._set_status("searching")
-        job = self._search_job(text)
-        if job is not None:
-            self.core.pool.start(job)
-
-    def _search_job(self, query: str):
-        from .jobs import SearchJob
-
         job = SearchJob(self.core.catalog, query, 12)
         job.signals.done.connect(self._on_search_done)
         job.signals.failed.connect(self._on_search_failed)
-        return job
+        self.core.pool.start(job)
 
     def _on_search_done(self, query: str, songs: List[Song]) -> None:
         if not songs:
             self._set_status("nothing found")
             return
         self.field.clear()
+        self._switch_tab("queue")
         self.core.adopt(songs, 0)
         self._set_status(pretty_count(len(songs), "result"))
 
@@ -970,6 +1210,7 @@ class FloatingPanel(QWidget):
         self._set_status("endless on" if enabled else "endless off")
 
     def _on_quit(self) -> None:
+        self.toast.close()
         self.closed.emit()
         self.close()
 
@@ -982,14 +1223,19 @@ class FloatingPanel(QWidget):
         self.clamp_to_screen()
 
     def hotkeys(self) -> List[Tuple[str, Callable[[], None]]]:
-        """(sequence, callback) pairs the app registers on the window."""
+        """User-configured (sequence, callback) pairs to register on the window."""
+        cfg_toggle = str(self.settings.value(f"{SETTINGS_HOTKEYS}/toggle", DEFAULT_HOTKEYS["toggle"]))
+        cfg_forward = str(self.settings.value(f"{SETTINGS_HOTKEYS}/forward", DEFAULT_HOTKEYS["forward"]))
+        cfg_back = str(self.settings.value(f"{SETTINGS_HOTKEYS}/back", DEFAULT_HOTKEYS["back"]))
+        cfg_expand = str(self.settings.value(f"{SETTINGS_HOTKEYS}/expand", DEFAULT_HOTKEYS["expand"]))
+
         return [
-            ("Ctrl+Alt+Space", self.core.toggle),
-            ("Ctrl+Alt+Right", self.core.forward),
-            ("Ctrl+Alt+Left", self.core.back),
+            (cfg_toggle, self.core.toggle),
+            (cfg_forward, self.core.forward),
+            (cfg_back, self.core.back),
+            (cfg_expand, self.toggle_expand),
             ("Ctrl+Alt+Up", self.expand),
             ("Ctrl+Alt+Down", self.collapse),
-            ("Ctrl+Alt+E", self.toggle_expand),
             ("Ctrl+Alt+F", self._focus_field),
         ]
 

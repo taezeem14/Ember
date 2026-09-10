@@ -4,17 +4,27 @@ Every stylesheet Ember uses, built from the Palette with string.Template.
 
 Template (not f-strings) because Qt stylesheets are full of braces and
 doubling them all would be unreadable.
+
+# Extended/upgraded by Taezeem (@taezeem14) — fork of Ember
 """
 
 from __future__ import annotations
 
 from string import Template
+from typing import Any, Dict
 
 from .config import Palette
 
 
-def _tokens() -> dict:
-    return {name: value for name, value in vars(Palette).items() if not name.startswith("_")}
+def _tokens() -> Dict[str, Any]:
+    """Extract string design tokens from the active Palette."""
+    tokens: Dict[str, Any] = {}
+    for name in dir(Palette):
+        if not name.startswith("_") and name not in ("THEMES", "list_themes", "apply_theme", "current_theme"):
+            val = getattr(Palette, name)
+            if isinstance(val, str):
+                tokens[name] = val
+    return tokens
 
 
 _PANEL = Template(
@@ -130,6 +140,16 @@ QWidget {
 #Pill:hover { background: rgba(244, 233, 221, 0.13); color: $text; }
 #PillClose:hover { background: rgba(201, 127, 106, 0.32); color: #FFE8DF; }
 
+#HeartButton {
+    background: transparent;
+    color: $muted;
+    font-size: 14px;
+    border: none;
+    border-radius: 13px;
+}
+#HeartButton:hover { color: $clay; background: rgba(201, 127, 106, 0.12); }
+#HeartButton[active="true"] { color: $clay; }
+
 #Chip {
     background: rgba(244, 233, 221, 0.05);
     border: 1px solid $line;
@@ -143,6 +163,22 @@ QWidget {
 #Chip:checked {
     background: rgba(232, 164, 104, 0.16);
     border: 1px solid rgba(232, 164, 104, 0.42);
+    color: $amber_hi;
+}
+
+#TabButton {
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    color: $muted;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    padding: 3px 8px;
+    font-weight: 600;
+}
+#TabButton:hover { color: $text; background: rgba(244, 233, 221, 0.06); }
+#TabButton:checked {
+    background: rgba(232, 164, 104, 0.18);
     color: $amber_hi;
 }
 
@@ -210,6 +246,64 @@ QToolTip {
 """
 )
 
+_SETTINGS = Template(
+    """
+QDialog {
+    background: $surface;
+    border: 1px solid $line;
+    border-radius: 16px;
+    color: $text;
+}
+QLabel { color: $text; font-size: 12px; }
+#SettingsTitle {
+    font-family: Georgia, "Iowan Old Style", serif;
+    font-size: 16px;
+    color: $amber_hi;
+}
+#SettingsSub { color: $faint; font-size: 10px; }
+#SettingsSection { color: $amber; font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+QCheckBox { color: $text; font-size: 12px; spacing: 8px; }
+QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid $line; border-radius: 4px; background: $raised; }
+QCheckBox::indicator:checked { background: $amber; border: 1px solid $amber_hi; }
+QComboBox {
+    background: $raised;
+    color: $text;
+    border: 1px solid $line;
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 12px;
+}
+QComboBox QAbstractItemView {
+    background: $surface;
+    color: $text;
+    selection-background-color: $raised;
+    border: 1px solid $line;
+}
+QPushButton#SettingsClose {
+    background: $raised;
+    color: $text;
+    border: 1px solid $line;
+    border-radius: 10px;
+    padding: 6px 14px;
+    font-size: 11px;
+}
+QPushButton#SettingsClose:hover { background: $line; }
+"""
+)
+
+_TOAST = Template(
+    """
+#ToastShell {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 $shell_a, stop:1 $void);
+    border: 1px solid rgba(244, 233, 221, 0.12);
+    border-radius: 14px;
+}
+#ToastTitle { color: $text; font-size: 12px; font-weight: 600; }
+#ToastArtist { color: $muted; font-size: 11px; }
+#ToastBadge { color: $amber_hi; font-size: 9px; letter-spacing: 1px; font-weight: 700; }
+"""
+)
+
 
 def panel_stylesheet() -> str:
     """Full stylesheet for the floating panel and everything inside it."""
@@ -219,3 +313,13 @@ def panel_stylesheet() -> str:
 def popup_stylesheet() -> str:
     """Applied application-wide — only touches menus and tooltips."""
     return _MENU.substitute(_tokens())
+
+
+def settings_stylesheet() -> str:
+    """Stylesheet for the preferences and settings dialog."""
+    return _SETTINGS.substitute(_tokens())
+
+
+def toast_stylesheet() -> str:
+    """Stylesheet for the now-playing desktop toast notification."""
+    return _TOAST.substitute(_tokens())
