@@ -271,12 +271,18 @@ class SettingsDialog(QDialog):
 
     def _validate_hotkeys(self) -> None:
         conflicts: List[str] = []
+        seen_chords: Dict[str, str] = {}
         for key, inp in self.hotkey_inputs.items():
             chord = inp.text().strip()
+            if not chord:
+                continue
             if chord in WINDOWS_CONFLICTS:
-                conflicts.append(chord)
+                conflicts.append(f"'{chord}' (Windows system)")
+            elif chord in seen_chords:
+                conflicts.append(f"'{chord}' (duplicate)")
+            seen_chords[chord] = key
         if conflicts:
-            self.conflict_warn.setText(f"Warning: '{', '.join(conflicts)}' conflicts with Windows standard shortcut!")
+            self.conflict_warn.setText(f"Warning: {', '.join(conflicts)} conflict detected!")
             self.conflict_warn.setVisible(True)
         else:
             self.conflict_warn.setVisible(False)
