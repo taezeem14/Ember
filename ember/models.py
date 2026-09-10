@@ -43,6 +43,8 @@ class Song:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Song":
         """Reconstruct a Song from a dictionary representation."""
+        if not data:
+            data = {}
         return cls(
             video_id=str(data.get("video_id", "")),
             title=str(data.get("title", "untitled")),
