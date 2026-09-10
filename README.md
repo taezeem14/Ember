@@ -21,7 +21,7 @@
 ---
 
 > **Why this fork exists:**  
-> I'm Taezeem — 19, solo dev living at the intersection of full-stack AI and cybersecurity tools. When I found Mayank's original Ember player, the warm espresso aesthetic and single-source-of-truth palette architecture hooked me instantly. But I needed it bulletproof for 3 AM coding flow states: zero playback starvation, SQLite persistence, instant debounced search, custom theme flavors, and real error recovery so it never drops a beat when the network hiccups. So I upgraded it into a daily driver.
+> I'm Taezeem — 15, solo dev living at the intersection of full-stack AI and cybersecurity tools. When I found Mayank's original Ember player, the warm espresso aesthetic and single-source-of-truth palette architecture hooked me instantly. But I needed it bulletproof for 3 AM coding flow states: zero playback starvation, SQLite persistence, instant debounced search, custom theme flavors, and real error recovery so it never drops a beat when the network hiccups. So I upgraded it into a daily driver.
 
 ---
 
