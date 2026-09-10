@@ -26,7 +26,7 @@ from PyQt6.QtGui import (
     QPixmap,
 )
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
-from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
+from PyQt6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
 from .config import APP_NAME, Palette
 

@@ -30,3 +30,13 @@ def test_modules_loaded() -> None:
     assert ember.storage.EmberStorage is not None
     assert ember.toast.NowPlayingToast is not None
     assert ember.settings_dialog.SettingsDialog is not None
+    assert ember.tray.TrayPresence is not None
+
+
+def test_tray_presence_instantiation() -> None:
+    import sys
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication(sys.argv)
+    tray = ember.tray.TrayPresence()
+    assert tray.icon is not None
+    assert tray.menu is not None
