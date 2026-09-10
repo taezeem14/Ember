@@ -501,6 +501,7 @@ class FloatingPanel(QWidget):
     closed = pyqtSignal()
     endless_toggled = pyqtSignal(bool)
     theme_reloaded = pyqtSignal(str)
+    hotkeys_updated = pyqtSignal()
 
     def __init__(
         self,
@@ -1052,6 +1053,7 @@ class FloatingPanel(QWidget):
         dlg.theme_changed.connect(self.reload_theme)
         dlg.normalization_changed.connect(self.core.set_normalize_volume)
         dlg.endless_changed.connect(self._on_endless_from_settings)
+        dlg.hotkeys_changed.connect(lambda _: self.hotkeys_updated.emit())
         dlg.exec()
 
     def _on_endless_from_settings(self, enabled: bool) -> None:

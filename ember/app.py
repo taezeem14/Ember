@@ -233,6 +233,16 @@ def main() -> int:
 
     registered_shortcuts = _wire_shortcuts(panel)
 
+    def _on_hotkeys_updated() -> None:
+        for shortcut in registered_shortcuts:
+            shortcut.setEnabled(False)
+            shortcut.deleteLater()
+        registered_shortcuts.clear()
+        registered_shortcuts.extend(_wire_shortcuts(panel))
+        log.info("registered %d updated shortcuts", len(registered_shortcuts))
+
+    panel.hotkeys_updated.connect(_on_hotkeys_updated)
+
     def _on_theme_reloaded(_: str) -> None:
         app.setStyleSheet(popup_stylesheet())
         tray.icon.setIcon(ember_icon())
