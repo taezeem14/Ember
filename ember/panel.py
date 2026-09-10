@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -43,6 +44,7 @@ from .config import (
     ART_HERO,
     ARTWORK_CACHE_LIMIT,
     COMPACT_HEIGHT,
+    DEFAULT_OPACITY,
     EXPANDED_HEIGHT,
     PANEL_WIDTH,
     Palette,
@@ -51,6 +53,7 @@ from .config import (
     SETTINGS_AUTO_QUEUE,
     SETTINGS_HOTKEYS,
     SETTINGS_NORMALIZE_VOLUME,
+    SETTINGS_OPACITY,
     SETTINGS_THEME,
     SETTINGS_TOAST_ENABLED,
     SHELL_MARGIN,
@@ -67,14 +70,18 @@ from .icons import (
     heart_icon,
     history_icon,
     infinity_icon,
+    lyrics_icon,
+    moon_icon,
     music_icon,
     pause_icon,
     play_icon,
     queue_icon,
+    repeat_icon,
     search_icon,
     settings_icon,
+    shuffle_icon,
 )
-from .jobs import ArtJob, SearchJob
+from .jobs import ArtJob, LyricsJob, SearchJob
 from .models import Song
 from .player import PlaybackCore
 from .settings_dialog import DEFAULT_HOTKEYS, SettingsDialog
@@ -272,16 +279,43 @@ class VinylDisc(QWidget):
         painter.end()
 
 
+class SpringPhysics:
+    """Calculates spring-damper dynamics for fluid audio visualizer bars."""
+
+    @staticmethod
+    def step(
+        pos: list[float],
+        vel: list[float],
+        step_idx: int,
+        stiffness: float = 0.28,
+        damping: float = 0.65,
+    ) -> tuple[list[float], list[float]]:
+        import math
+        new_pos = list(pos)
+        new_vel = list(vel)
+        for i in range(len(pos)):
+            phase = step_idx * 0.22 + i * 1.35
+            amp = 3.8 + (i % 2) * 2.2
+            base = 7.0
+            target = max(3.0, min(13.0, base + math.sin(phase) * amp + math.cos(phase * 0.5) * 1.5))
+            force = (target - new_pos[i]) * stiffness
+            new_vel[i] = (new_vel[i] + force) * damping
+            new_pos[i] = max(2.5, min(13.5, new_pos[i] + new_vel[i]))
+        return new_pos, new_vel
+
+
 class EqualiserBars(QWidget):
-    """Three bars that breathe while their row is the playing row."""
+    """Four bars that animate with fluid spring-damper physics while playing."""
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setFixedSize(16, 14)
-        self._phase = 0
+        self.setFixedSize(18, 14)
         self._on = False
+        self._pos = [3.5, 3.5, 3.5, 3.5]
+        self._vel = [0.0, 0.0, 0.0, 0.0]
+        self._step = 0
         self._timer = QTimer(self)
-        self._timer.setInterval(120)
+        self._timer.setInterval(40)
         self._timer.timeout.connect(self._tick)
 
     def set_on(self, on: bool) -> None:
@@ -290,10 +324,15 @@ class EqualiserBars(QWidget):
             self._timer.start()
         elif not self._on:
             self._timer.stop()
+            self._pos = [3.5, 3.5, 3.5, 3.5]
+            self._vel = [0.0, 0.0, 0.0, 0.0]
         self.update()
 
     def _tick(self) -> None:
-        self._phase = (self._phase + 1) % 6
+        if not self._on:
+            return
+        self._step += 1
+        self._pos, self._vel = SpringPhysics.step(self._pos, self._vel, self._step)
         self.update()
 
     def paintEvent(self, event) -> None:  # noqa: N802
@@ -303,20 +342,19 @@ class EqualiserBars(QWidget):
 
         if not self._on:
             painter.setBrush(QColor(Palette.faint))
-            for column in range(3):
-                painter.drawRoundedRect(QRectF(column * 5.0, 9.0, 3.0, 5.0), 1.5, 1.5)
+            for col in range(4):
+                painter.drawRoundedRect(QRectF(col * 4.4, 9.5, 2.8, 4.0), 1.4, 1.4)
             painter.end()
             return
 
-        painter.setBrush(QColor(Palette.amber_hi))
-        profile = (4.0, 11.0, 6.0)
-        for column in range(3):
-            swing = (self._phase + column * 2) % 6
-            height = profile[column] + (swing - 3) * 0.9
-            height = max(3.5, min(13.0, height))
-            painter.drawRoundedRect(
-                QRectF(column * 5.0, 14.0 - height, 3.0, height), 1.5, 1.5
-            )
+        gradient = QLinearGradient(0, 14, 0, 0)
+        gradient.setColorAt(0.0, QColor(Palette.amber))
+        gradient.setColorAt(1.0, QColor(Palette.amber_hi))
+        painter.setBrush(gradient)
+
+        for col in range(4):
+            h = self._pos[col]
+            painter.drawRoundedRect(QRectF(col * 4.4, 14.0 - h, 2.8, h), 1.4, 1.4)
         painter.end()
 
 
@@ -525,6 +563,14 @@ class FloatingPanel(QWidget):
 
         self.toast = NowPlayingToast()
 
+        self._current_lyrics_vid: Optional[str] = None
+        self._lyrics_loaded_for: Optional[str] = None
+        self._sleep_seconds_remaining: int = 0
+        self._sleep_fading: bool = False
+        self._sleep_timer = QTimer(self)
+        self._sleep_timer.setInterval(1000)
+        self._sleep_timer.timeout.connect(self._on_sleep_tick)
+
         self.setWindowTitle(APP_NAME)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -533,6 +579,12 @@ class FloatingPanel(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setStyleSheet(panel_stylesheet())
+
+        try:
+            saved_opacity = int(self.settings.value(SETTINGS_OPACITY, DEFAULT_OPACITY))
+        except (ValueError, TypeError):
+            saved_opacity = DEFAULT_OPACITY
+        self.set_window_opacity_percent(saved_opacity)
 
         self._build()
         self._wire()
@@ -730,6 +782,62 @@ class FloatingPanel(QWidget):
         seek_row.addWidget(self.total)
 
         column.addLayout(seek_row)
+
+        # Transport controls inside NowCard
+        transport = QHBoxLayout()
+        transport.setContentsMargins(0, 2, 0, 0)
+        transport.setSpacing(10)
+
+        self.panel_shuffle = QPushButton(card)
+        self.panel_shuffle.setObjectName("ModeToggle")
+        self.panel_shuffle.setFixedSize(28, 28)
+        self.panel_shuffle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.panel_shuffle.setToolTip("Shuffle upcoming queue")
+        self.panel_shuffle.setIcon(shuffle_icon(False))
+        self.panel_shuffle.setIconSize(QSize(14, 14))
+        self.panel_shuffle.clicked.connect(self.core.shuffle_upcoming)
+        transport.addWidget(self.panel_shuffle)
+
+        transport.addStretch(1)
+
+        self.panel_prev = self._ghost_btn(28)
+        self.panel_prev.setToolTip("previous track")
+        self.panel_prev.setIcon(backward_icon())
+        self.panel_prev.setIconSize(QSize(14, 14))
+        self.panel_prev.clicked.connect(self.core.back)
+        transport.addWidget(self.panel_prev)
+
+        self.panel_play = QPushButton(card)
+        self.panel_play.setObjectName("RoundPlay")
+        self.panel_play.setFixedSize(36, 36)
+        self.panel_play.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.panel_play.setToolTip("play / pause")
+        self.panel_play.setIcon(play_icon())
+        self.panel_play.setIconSize(QSize(16, 16))
+        self.panel_play.clicked.connect(self.core.toggle)
+        transport.addWidget(self.panel_play)
+
+        self.panel_next = self._ghost_btn(28)
+        self.panel_next.setToolTip("next track")
+        self.panel_next.setIcon(forward_icon())
+        self.panel_next.setIconSize(QSize(14, 14))
+        self.panel_next.clicked.connect(lambda: self.core.forward(force=True))
+        transport.addWidget(self.panel_next)
+
+        transport.addStretch(1)
+
+        self.panel_repeat = QPushButton(card)
+        self.panel_repeat.setObjectName("ModeToggle")
+        self.panel_repeat.setFixedSize(28, 28)
+        self.panel_repeat.setCheckable(True)
+        self.panel_repeat.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.panel_repeat.setToolTip("Repeat: Off")
+        self.panel_repeat.setIcon(repeat_icon("off"))
+        self.panel_repeat.setIconSize(QSize(14, 14))
+        self.panel_repeat.clicked.connect(self.core.cycle_repeat_mode)
+        transport.addWidget(self.panel_repeat)
+
+        column.addLayout(transport)
         return card
 
     def _build_search(self) -> QHBoxLayout:
@@ -757,7 +865,7 @@ class FloatingPanel(QWidget):
     def _build_tabs_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
+        row.setSpacing(5)
 
         self.tab_queue = QPushButton(" Up Next", self)
         self.tab_queue.setObjectName("TabButton")
@@ -778,19 +886,33 @@ class FloatingPanel(QWidget):
         self.tab_history.setIcon(history_icon())
         self.tab_history.setIconSize(QSize(12, 12))
 
+        self.tab_lyrics = QPushButton(" Lyrics", self)
+        self.tab_lyrics.setObjectName("TabButton")
+        self.tab_lyrics.setCheckable(True)
+        self.tab_lyrics.setIcon(lyrics_icon())
+        self.tab_lyrics.setIconSize(QSize(12, 12))
+        self.tab_lyrics.setToolTip("live song lyrics")
+
         row.addWidget(self.tab_queue)
         row.addWidget(self.tab_favs)
         row.addWidget(self.tab_history)
+        row.addWidget(self.tab_lyrics)
         row.addStretch(1)
 
         self.tab_queue.clicked.connect(lambda: self._switch_tab("queue"))
         self.tab_favs.clicked.connect(lambda: self._switch_tab("favorites"))
         self.tab_history.clicked.connect(lambda: self._switch_tab("history"))
+        self.tab_lyrics.clicked.connect(lambda: self._switch_tab("lyrics"))
 
         return row
 
     def _build_queue(self) -> QWidget:
-        self.queue_scroll = QScrollArea(self)
+        container = QWidget(self)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.queue_scroll = QScrollArea(container)
         self.queue_scroll.setObjectName("QueueScroll")
         self.queue_scroll.setWidgetResizable(True)
         self.queue_scroll.setFixedHeight(QUEUE_VIEW_HEIGHT)
@@ -808,13 +930,38 @@ class FloatingPanel(QWidget):
         self._empty.setObjectName("Hint")
         self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.queue_list.insertWidget(0, self._empty)
+        layout.addWidget(self.queue_scroll)
 
-        return self.queue_scroll
+        # Lyrics view
+        self.lyrics_scroll = QScrollArea(container)
+        self.lyrics_scroll.setObjectName("LyricsScroll")
+        self.lyrics_scroll.setWidgetResizable(True)
+        self.lyrics_scroll.setFixedHeight(QUEUE_VIEW_HEIGHT)
+        self.lyrics_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.lyrics_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.lyrics_scroll.setVisible(False)
+
+        lyrics_host = QWidget()
+        lyrics_layout = QVBoxLayout(lyrics_host)
+        lyrics_layout.setContentsMargins(14, 12, 14, 12)
+        lyrics_layout.setSpacing(8)
+
+        self.lyrics_text = QLabel("No lyrics available", lyrics_host)
+        self.lyrics_text.setObjectName("LyricsText")
+        self.lyrics_text.setWordWrap(True)
+        self.lyrics_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lyrics_text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        lyrics_layout.addWidget(self.lyrics_text)
+        lyrics_layout.addStretch(1)
+        self.lyrics_scroll.setWidget(lyrics_host)
+        layout.addWidget(self.lyrics_scroll)
+
+        return container
 
     def _build_footer(self) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setContentsMargins(2, 0, 0, 0)
-        row.setSpacing(8)
+        row.setSpacing(6)
 
         self.endless = QPushButton(" Endless", self)
         self.endless.setObjectName("Chip")
@@ -824,6 +971,23 @@ class FloatingPanel(QWidget):
         self.endless.setIconSize(QSize(13, 13))
         self.endless.setToolTip("keep adding look-alike tracks when queue runs dry")
         row.addWidget(self.endless)
+
+        self.speed_btn = QPushButton("1.0x", self)
+        self.speed_btn.setObjectName("SpeedPill")
+        self.speed_btn.setToolTip("Playback speed (click to cycle)")
+        self.speed_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.speed_btn.clicked.connect(self._cycle_speed)
+        row.addWidget(self.speed_btn)
+
+        self.sleep_btn = QPushButton(" Sleep", self)
+        self.sleep_btn.setObjectName("SleepPill")
+        self.sleep_btn.setCheckable(True)
+        self.sleep_btn.setIcon(moon_icon(False))
+        self.sleep_btn.setIconSize(QSize(12, 12))
+        self.sleep_btn.setToolTip("Sleep timer (click to set)")
+        self.sleep_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sleep_btn.clicked.connect(self._open_sleep_menu)
+        row.addWidget(self.sleep_btn)
 
         self.count = QLabel("0 tracks", self)
         self.count.setObjectName("Hint")
@@ -880,11 +1044,32 @@ class FloatingPanel(QWidget):
         self.ribbon_play.setIcon(pause_icon() if is_playing else play_icon())
         self.ribbon_play.setIconSize(QSize(16, 16))
 
+        self.panel_play.setIcon(pause_icon() if is_playing else play_icon())
+        self.panel_play.setIconSize(QSize(16, 16))
+
         self.ribbon_prev.setIcon(backward_icon())
         self.ribbon_prev.setIconSize(QSize(14, 14))
 
+        self.panel_prev.setIcon(backward_icon())
+        self.panel_prev.setIconSize(QSize(14, 14))
+
         self.ribbon_next.setIcon(forward_icon())
         self.ribbon_next.setIconSize(QSize(14, 14))
+
+        self.panel_next.setIcon(forward_icon())
+        self.panel_next.setIconSize(QSize(14, 14))
+
+        self.panel_shuffle.setIcon(shuffle_icon(False))
+        self.panel_shuffle.setIconSize(QSize(14, 14))
+
+        self.panel_repeat.setIcon(repeat_icon(self.core.repeat_mode))
+        self.panel_repeat.setIconSize(QSize(14, 14))
+
+        self.tab_lyrics.setIcon(lyrics_icon())
+        self.tab_lyrics.setIconSize(QSize(12, 12))
+
+        self.sleep_btn.setIcon(moon_icon(self._sleep_seconds_remaining > 0))
+        self.sleep_btn.setIconSize(QSize(12, 12))
 
         self.ribbon_open.setIcon(expand_icon())
         self.ribbon_open.setIconSize(QSize(14, 14))
@@ -919,6 +1104,8 @@ class FloatingPanel(QWidget):
         core.length_changed.connect(self._on_length)
         core.loading_changed.connect(self._on_loading)
         core.notice.connect(self._on_notice)
+        core.repeat_mode_changed.connect(self._on_repeat_mode_changed)
+        core.rate_changed.connect(self._on_rate_changed)
 
         self.ribbon_play.clicked.connect(core.toggle)
         self.ribbon_prev.clicked.connect(core.back)
@@ -953,7 +1140,23 @@ class FloatingPanel(QWidget):
         self.tab_queue.setChecked(tab == "queue")
         self.tab_favs.setChecked(tab == "favorites")
         self.tab_history.setChecked(tab == "history")
-        self._refresh_tab_content()
+        self.tab_lyrics.setChecked(tab == "lyrics")
+
+        if tab == "lyrics":
+            self.queue_scroll.setVisible(False)
+            self.lyrics_scroll.setVisible(True)
+            curr = self.core.current
+            if curr:
+                self.count.setText("lyrics")
+                if self._lyrics_loaded_for != curr.video_id:
+                    self._fetch_lyrics(curr)
+            else:
+                self.lyrics_text.setText("No track playing")
+                self.count.setText("lyrics")
+        else:
+            self.lyrics_scroll.setVisible(False)
+            self.queue_scroll.setVisible(True)
+            self._refresh_tab_content()
 
     def _refresh_tab_content(self) -> None:
         if self._active_tab == "queue":
@@ -1051,10 +1254,15 @@ class FloatingPanel(QWidget):
     def _open_settings(self) -> None:
         dlg = SettingsDialog(self.settings, self)
         dlg.theme_changed.connect(self.reload_theme)
+        dlg.opacity_changed.connect(self.set_window_opacity_percent)
         dlg.normalization_changed.connect(self.core.set_normalize_volume)
         dlg.endless_changed.connect(self._on_endless_from_settings)
         dlg.hotkeys_changed.connect(lambda _: self.hotkeys_updated.emit())
         dlg.exec()
+
+    def set_window_opacity_percent(self, percent: int) -> None:
+        opacity = max(60, min(100, int(percent))) / 100.0
+        self.setWindowOpacity(opacity)
 
     def _on_endless_from_settings(self, enabled: bool) -> None:
         self.endless.blockSignals(True)
@@ -1225,6 +1433,10 @@ class FloatingPanel(QWidget):
         if toast_enabled:
             self.toast.show_song(song, cached)
 
+        self._lyrics_loaded_for = None
+        if self._active_tab == "lyrics":
+            self._fetch_lyrics(song)
+
         self._set_status("tuning in")
 
     def _on_queue(self, songs: List[Song]) -> None:
@@ -1240,8 +1452,125 @@ class FloatingPanel(QWidget):
 
     def _on_playing(self, playing: bool) -> None:
         self.ribbon_play.setIcon(pause_icon() if playing else play_icon())
+        self.panel_play.setIcon(pause_icon() if playing else play_icon())
         self.disc.set_spinning(playing)
         self._set_status("playing" if playing else "paused")
+
+    # ------------------------------------------------------------- lyrics slots
+    def _fetch_lyrics(self, song: Song) -> None:
+        self._current_lyrics_vid = song.video_id
+        self.lyrics_text.setText(f"Searching lyrics for\n{song.title}...")
+        job = LyricsJob(self.core.catalog, song.video_id)
+        job.signals.lyrics_ready.connect(self._on_lyrics_ready)
+        job.signals.lyrics_failed.connect(self._on_lyrics_failed)
+        self.core.pool.start(job)
+
+    def _on_lyrics_ready(self, video_id: str, lyrics: str, source: str) -> None:
+        if self._current_lyrics_vid != video_id:
+            return
+        self._lyrics_loaded_for = video_id
+        formatted = lyrics
+        if source:
+            formatted += f"\n\n— Source: {source}"
+        self.lyrics_text.setText(formatted)
+
+    def _on_lyrics_failed(self, video_id: str, message: str) -> None:
+        if self._current_lyrics_vid != video_id:
+            return
+        self._lyrics_loaded_for = video_id
+        self.lyrics_text.setText("Instrumental / No lyrics available")
+
+    # -------------------------------------------------------- modes & playback rates
+    def _on_repeat_mode_changed(self, mode: str) -> None:
+        self.panel_repeat.setChecked(mode != "off")
+        self.panel_repeat.setIcon(repeat_icon(mode))
+        self.panel_repeat.setToolTip(f"Repeat: {mode.capitalize()}")
+
+    def _on_rate_changed(self, rate: float) -> None:
+        self.speed_btn.setText(f"{rate:g}x")
+
+    def _cycle_speed(self) -> None:
+        rates = [1.0, 1.25, 1.5, 0.75]
+        cur = self.core.playback_rate
+        try:
+            idx = rates.index(cur)
+            next_rate = rates[(idx + 1) % len(rates)]
+        except ValueError:
+            next_rate = 1.0
+        self.core.set_playback_rate(next_rate)
+
+    # ------------------------------------------------------------- sleep timer
+    def _open_sleep_menu(self) -> None:
+        menu = QMenu(self)
+        presets = [
+            ("15 minutes", 15),
+            ("30 minutes", 30),
+            ("45 minutes", 45),
+            ("60 minutes", 60),
+        ]
+        for label, minutes in presets:
+            action = menu.addAction(label)
+            action.triggered.connect(lambda checked, m=minutes: self._start_sleep_timer(m))
+
+        menu.addSeparator()
+        cancel_act = menu.addAction("Turn Off Timer")
+        cancel_act.setEnabled(self._sleep_seconds_remaining > 0)
+        cancel_act.triggered.connect(self._cancel_sleep_timer)
+
+        btn_pos = self.sleep_btn.mapToGlobal(QPoint(0, -menu.sizeHint().height() - 4))
+        menu.exec(btn_pos)
+
+    def _start_sleep_timer(self, minutes: int) -> None:
+        self.core.cancel_fade()
+        self._sleep_seconds_remaining = minutes * 60
+        self._sleep_fading = False
+        self._sleep_timer.start()
+        self.sleep_btn.setChecked(True)
+        self.sleep_btn.setText(f" {minutes}m")
+        self.sleep_btn.setIcon(moon_icon(True))
+        self._set_status(f"sleep timer: {minutes}m")
+
+    def _on_sleep_tick(self) -> None:
+        if self._sleep_seconds_remaining <= 0:
+            self._cancel_sleep_timer()
+            return
+
+        self._sleep_seconds_remaining -= 1
+        mins = self._sleep_seconds_remaining // 60
+        secs = self._sleep_seconds_remaining % 60
+
+        if mins > 0:
+            self.sleep_btn.setText(f" {mins}m")
+        else:
+            self.sleep_btn.setText(f" {secs}s")
+
+        # In last 15 seconds, initiate volume attenuation fade-out
+        if self._sleep_seconds_remaining <= 15 and not self._sleep_fading:
+            self._sleep_fading = True
+            self.core.fade_out_and_pause(15000, on_done=self._on_sleep_finished)
+
+        if self._sleep_seconds_remaining <= 0:
+            self._cancel_sleep_timer()
+
+    def _cancel_sleep_timer(self) -> None:
+        self._sleep_timer.stop()
+        self._sleep_seconds_remaining = 0
+        if self._sleep_fading:
+            self.core.cancel_fade()
+            self._sleep_fading = False
+        self.sleep_btn.setChecked(False)
+        self.sleep_btn.setText(" Sleep")
+        self.sleep_btn.setIcon(moon_icon(False))
+        self._set_status("sleep timer off")
+
+    def _on_sleep_finished(self) -> None:
+        self._sleep_timer.stop()
+        self._sleep_seconds_remaining = 0
+        self._sleep_fading = False
+        self.sleep_btn.setChecked(False)
+        self.sleep_btn.setText(" Sleep")
+        self.sleep_btn.setIcon(moon_icon(False))
+        self._set_status("goodnight 🌙")
 
     def _on_progress(self, position: int) -> None:
         if self._scrubbing:
@@ -1332,6 +1661,9 @@ class FloatingPanel(QWidget):
         self._set_status("endless on" if enabled else "endless off")
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        if self._sleep_timer.isActive():
+            self._sleep_timer.stop()
+        self.core.cancel_fade()
         self.toast.close()
         self.closed.emit()
         super().closeEvent(event)

@@ -24,7 +24,7 @@ COMPACT_HEIGHT = 62        # ribbon shell height
 ART_COMPACT = 38
 ART_HERO = 76
 QUEUE_VIEW_HEIGHT = 168
-EXPANDED_HEIGHT = 512      # full panel shell height
+EXPANDED_HEIGHT = 556      # full panel shell height
 
 # ---------------------------------------------------------------- behaviour
 RADIO_DEPTH = 26           # how many look-alike tracks we pull per seed
