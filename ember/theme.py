@@ -17,13 +17,21 @@ from .config import Palette
 
 
 def _tokens() -> Dict[str, Any]:
-    """Extract string design tokens from the active Palette."""
+    """Extract string design tokens and dynamic RGB channels from Palette."""
     tokens: Dict[str, Any] = {}
     for name in dir(Palette):
         if not name.startswith("_") and name not in ("THEMES", "list_themes", "apply_theme", "current_theme"):
             val = getattr(Palette, name)
             if isinstance(val, str):
                 tokens[name] = val
+                if val.startswith("#") and len(val) == 7:
+                    try:
+                        r = int(val[1:3], 16)
+                        g = int(val[3:5], 16)
+                        b = int(val[5:7], 16)
+                        tokens[f"{name}_rgb"] = f"{r}, {g}, {b}"
+                    except ValueError:
+                        pass
     return tokens
 
 
@@ -38,7 +46,7 @@ QWidget {
 #Shell {
     background: qlineargradient(x1:0, y1:0, x2:0.9, y2:1,
                 stop:0 $shell_a, stop:0.55 $void, stop:1 $shell_b);
-    border: 1px solid rgba(244, 233, 221, 0.12);
+    border: 1px solid rgba($text_rgb, 0.12);
     border-radius: 22px;
 }
 #Ribbon, #Panel { background: transparent; }
@@ -75,8 +83,8 @@ QWidget {
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.5px;
-    background: rgba(232, 164, 104, 0.12);
-    border: 1px solid rgba(232, 164, 104, 0.32);
+    background: rgba($amber_rgb, 0.12);
+    border: 1px solid rgba($amber_rgb, 0.32);
     border-radius: 11px;
     padding: 3px 10px;
 }
@@ -84,9 +92,9 @@ QWidget {
 /* ------------------------------------------------------------------ cards */
 #NowCard {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 rgba(244, 233, 221, 0.05),
-                stop:1 rgba(244, 233, 221, 0.02));
-    border: 1px solid rgba(244, 233, 221, 0.08);
+                stop:0 rgba($text_rgb, 0.05),
+                stop:1 rgba($text_rgb, 0.02));
+    border: 1px solid rgba($text_rgb, 0.08);
     border-radius: 18px;
 }
 
@@ -103,7 +111,7 @@ QWidget {
 }
 #SearchField:focus {
     border: 1px solid $amber;
-    background: rgba(58, 42, 32, 0.9);
+    background: $raised;
 }
 
 /* ---------------------------------------------------------------- buttons */
@@ -138,31 +146,31 @@ QWidget {
     border: none;
     border-radius: 15px;
 }
-#Ghost:hover { background: rgba(244, 233, 221, 0.10); }
-#Ghost:pressed { background: rgba(244, 233, 221, 0.16); }
+#Ghost:hover { background: rgba($text_rgb, 0.10); }
+#Ghost:pressed { background: rgba($text_rgb, 0.16); }
 
 #Pill {
-    background: rgba(244, 233, 221, 0.05);
-    border: 1px solid rgba(244, 233, 221, 0.06);
+    background: rgba($text_rgb, 0.05);
+    border: 1px solid rgba($text_rgb, 0.06);
     border-radius: 13px;
 }
-#Pill:hover { background: rgba(244, 233, 221, 0.14); }
+#Pill:hover { background: rgba($text_rgb, 0.14); }
 #PillClose {
-    background: rgba(244, 233, 221, 0.05);
-    border: 1px solid rgba(244, 233, 221, 0.06);
+    background: rgba($text_rgb, 0.05);
+    border: 1px solid rgba($text_rgb, 0.06);
     border-radius: 13px;
 }
-#PillClose:hover { background: rgba(201, 127, 106, 0.35); }
+#PillClose:hover { background: rgba($clay_rgb, 0.35); }
 
 #HeartButton {
     background: transparent;
     border: none;
     border-radius: 13px;
 }
-#HeartButton:hover { background: rgba(201, 127, 106, 0.16); }
+#HeartButton:hover { background: rgba($clay_rgb, 0.16); }
 
 #Chip {
-    background: rgba(244, 233, 221, 0.04);
+    background: rgba($text_rgb, 0.04);
     border: 1px solid $line;
     border-radius: 12px;
     color: $muted;
@@ -171,15 +179,15 @@ QWidget {
     letter-spacing: 0.5px;
     padding: 4px 12px;
 }
-#Chip:hover { color: $text; border: 1px solid $faint; background: rgba(244, 233, 221, 0.08); }
+#Chip:hover { color: $text; border: 1px solid $faint; background: rgba($text_rgb, 0.08); }
 #Chip:checked {
-    background: rgba(232, 164, 104, 0.18);
-    border: 1px solid rgba(232, 164, 104, 0.45);
+    background: rgba($amber_rgb, 0.18);
+    border: 1px solid rgba($amber_rgb, 0.45);
     color: $amber_hi;
 }
 
 #TabButton {
-    background: rgba(244, 233, 221, 0.03);
+    background: rgba($text_rgb, 0.03);
     border: 1px solid transparent;
     border-radius: 11px;
     color: $muted;
@@ -188,10 +196,10 @@ QWidget {
     padding: 4px 11px;
     font-weight: 700;
 }
-#TabButton:hover { color: $text; background: rgba(244, 233, 221, 0.08); }
+#TabButton:hover { color: $text; background: rgba($text_rgb, 0.08); }
 #TabButton:checked {
-    background: rgba(232, 164, 104, 0.16);
-    border: 1px solid rgba(232, 164, 104, 0.38);
+    background: rgba($amber_rgb, 0.16);
+    border: 1px solid rgba($amber_rgb, 0.38);
     color: $amber_hi;
 }
 
@@ -220,7 +228,8 @@ QMenu::item {
     color: $text;
     font-size: 12px;
 }
-QMenu::item:selected { background: rgba(232, 164, 104, 0.20); color: $amber_hi; }
+QMenu::item:selected { background: rgba($amber_rgb, 0.20); color: $amber_hi; }
+QMenu::item:disabled { color: $faint; }
 QMenu::separator { height: 1px; background: $line; margin: 5px 8px; }
 QToolTip {
     background: $surface;
@@ -237,7 +246,7 @@ _SETTINGS = Template(
     """
 QDialog {
     background: $surface;
-    border: 1px solid rgba(244, 233, 221, 0.14);
+    border: 1px solid rgba($text_rgb, 0.14);
     border-radius: 20px;
     color: $text;
 }
@@ -275,7 +284,7 @@ _TOAST = Template(
     """
 #ToastShell {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 $shell_a, stop:1 $void);
-    border: 1px solid rgba(244, 233, 221, 0.16);
+    border: 1px solid rgba($text_rgb, 0.16);
     border-radius: 16px;
 }
 #ToastTitle { color: $text; font-size: 12px; font-weight: 700; }
