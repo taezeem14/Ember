@@ -29,6 +29,7 @@ from .stream import StreamResolver
 log = logging.getLogger(__name__)
 
 MAX_AUTO_SKIP = 3  # consecutive dead tracks before we stop advancing
+MAX_QUEUE_SIZE = 200  # prevent infinite queue growth from auto-radio
 
 
 class PlaybackCore(QObject):
@@ -132,11 +133,13 @@ class PlaybackCore(QObject):
             self.cursor_changed.emit(slot)
 
         self._wanted = song.video_id
+        self._failed_source = None  # allow manual retries of failed tracks
         self._switching = True
         self.loading_changed.emit(True)
         self.song_changed.emit(song)
 
         # Immediate off-thread stream resolution on isolated pool
+        self.playback_pool.clear()  # cancel stale queued jobs from rapid skips
         self._start_load(song)
         if expand:
             # Parallel background recommendation fetch
@@ -228,7 +231,7 @@ class PlaybackCore(QObject):
         job = LinkJob(self.resolver, url)
         job.signals.ready.connect(self._on_link_song)
         job.signals.failed.connect(self._on_link_failed)
-        self.playback_pool.start(job)
+        self.pool.start(job)  # general pool, NOT playback_pool — don't block audio
 
     # ------------------------------------------------------------------ loading
     def _start_load(self, song: Song) -> None:
@@ -272,6 +275,10 @@ class PlaybackCore(QObject):
 
     def _on_radio_ready(self, seed_id: str, songs: list) -> None:
         self._extending = False
+        # Ignore results from outdated radio jobs
+        if seed_id != self._radio_seed:
+            self._advance_after_extend = False
+            return
         current = self.current
         if current is None or current.video_id != seed_id or not songs:
             self._advance_after_extend = False
@@ -281,6 +288,14 @@ class PlaybackCore(QObject):
         fresh = [song for song in songs if song.video_id not in known]
         if fresh:
             self.queue.extend(fresh)
+
+            # Prune already-played tracks when queue exceeds cap
+            if len(self.queue) > MAX_QUEUE_SIZE and self.cursor > 10:
+                trim = self.cursor - 5
+                self.queue = self.queue[trim:]
+                self.cursor -= trim
+                self.cursor_changed.emit(self.cursor)
+
             self.queue_changed.emit(self.queue)
 
         if self._advance_after_extend:
