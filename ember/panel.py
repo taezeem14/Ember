@@ -1016,7 +1016,10 @@ class FloatingPanel(QWidget):
         if curr and curr.video_id == target.video_id:
             self._update_favorite_buttons(self.storage.is_favorite(target.video_id))
 
+        bar = self.queue_scroll.verticalScrollBar()
+        pos = bar.value()
         self._refresh_tab_content()
+        bar.setValue(pos)
 
     # ------------------------------------------------------------- favorites
     def _toggle_favorite(self) -> None:
@@ -1032,7 +1035,10 @@ class FloatingPanel(QWidget):
             self._update_favorite_buttons(True)
             self._set_status("pinned to favorites ♥")
 
+        bar = self.queue_scroll.verticalScrollBar()
+        pos = bar.value()
         self._refresh_tab_content()
+        bar.setValue(pos)
 
     def _update_favorite_buttons(self, is_fav: bool) -> None:
         icon = heart_icon(is_fav)
@@ -1149,8 +1155,10 @@ class FloatingPanel(QWidget):
     def _request_art(self, song: Song) -> None:
         if not song.artwork_url:
             return
-        cached = self._art_cache.get(song.video_id)
-        if cached is not None:
+        if song.video_id in self._art_cache:
+            # Refresh LRU access order
+            cached = self._art_cache.pop(song.video_id)
+            self._art_cache[song.video_id] = cached
             self._paint_art(song.video_id, cached)
             return
         if song.video_id in self._art_pending:
@@ -1159,6 +1167,7 @@ class FloatingPanel(QWidget):
         self._art_pending.add(song.video_id)
         job = ArtJob(song.video_id, song.artwork_url)
         job.signals.arrived.connect(self._on_art)
+        job.signals.failed.connect(lambda sid, _msg: self._art_pending.discard(sid))
         self.core.pool.start(job)
 
     def _on_art(self, song_id: str, payload: bytes) -> None:
@@ -1171,7 +1180,8 @@ class FloatingPanel(QWidget):
             self._art_cache.pop(next(iter(self._art_cache)), None)
         self._art_cache[song_id] = source
         self._paint_art(song_id, source)
-        self.toast.update_art(source)
+        if self.core.current and self.core.current.video_id == song_id:
+            self.toast.update_art(source)
 
     def _paint_art(self, song_id: str, source: QPixmap) -> None:
         current = self.core.current
@@ -1181,7 +1191,9 @@ class FloatingPanel(QWidget):
         self.hero_art.setPixmap(rounded_pixmap(source, ART_HERO))
 
     # ------------------------------------------------------------------- slots
-    def _on_song(self, song: Song) -> None:
+    def _on_song(self, song: Optional[Song]) -> None:
+        if not song:
+            return
         elide_into(self.ribbon_title, song.title, self.ribbon_title.width() or 160)
         elide_into(self.ribbon_artist, song.byline, self.ribbon_artist.width() or 160)
         elide_into(self.hero_title, song.title, 190)
@@ -1285,21 +1297,27 @@ class FloatingPanel(QWidget):
 
     def _execute_search(self, query: str) -> None:
         self._set_status("searching")
+        self._active_search = query
         job = SearchJob(self.core.catalog, query, 12)
         job.signals.done.connect(self._on_search_done)
         job.signals.failed.connect(self._on_search_failed)
         self.core.pool.start(job)
 
     def _on_search_done(self, query: str, songs: List[Song]) -> None:
+        if getattr(self, "_active_search", None) != query:
+            return  # stale search results from an older query
         if not songs:
             self._set_status("nothing found")
             return
-        self.field.clear()
+        if self.field.text().strip() == query:
+            self.field.clear()
         self._switch_tab("queue")
         self.core.adopt(songs, 0)
         self._set_status(pretty_count(len(songs), "result"))
 
     def _on_search_failed(self, query: str, message: str) -> None:
+        if getattr(self, "_active_search", None) != query:
+            return
         self._set_status("search failed")
         log.warning("search %r failed: %s", query, message)
 
@@ -1311,9 +1329,12 @@ class FloatingPanel(QWidget):
         self.endless_toggled.emit(enabled)
         self._set_status("endless on" if enabled else "endless off")
 
-    def _on_quit(self) -> None:
+    def closeEvent(self, event) -> None:  # noqa: N802
         self.toast.close()
         self.closed.emit()
+        super().closeEvent(event)
+
+    def _on_quit(self) -> None:
         self.close()
 
     # -------------------------------------------------------------- public API
