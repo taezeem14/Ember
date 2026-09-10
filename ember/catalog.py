@@ -81,7 +81,12 @@ def _artwork_url(item: Dict[str, Any]) -> str:
         # Choose highest width/height or last element
         valid = [entry for entry in raw if isinstance(entry, dict) and entry.get("url")]
         if valid:
-            valid.sort(key=lambda x: int(x.get("width") or 0) * int(x.get("height") or 0))
+            def _area(x: Dict[str, Any]) -> int:
+                try:
+                    return int(x.get("width") or 0) * int(x.get("height") or 0)
+                except (ValueError, TypeError):
+                    return 0
+            valid.sort(key=_area)
             return valid[-1].get("url") or ""
     return ""
 
