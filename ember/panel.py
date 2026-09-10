@@ -179,7 +179,7 @@ class SeekBar(QWidget):
             self.scrubbed.emit(val)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
-        if self._scrubbing:
+        if event.button() == Qt.MouseButton.LeftButton and self._scrubbing:
             self._scrubbing = False
             self.released.emit(self.value())
 
@@ -364,7 +364,10 @@ class VolumeDial(QWidget):
         self._drag_origin = None
 
     def wheelEvent(self, event) -> None:  # noqa: N802
-        step = 4 if event.angleDelta().y() > 0 else -4
+        delta = event.angleDelta().y()
+        if delta == 0:
+            return
+        step = 4 if delta > 0 else -4
         target = max(0, min(100, self._value + step))
         if target != self._value:
             self._value = target
