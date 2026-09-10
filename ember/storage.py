@@ -13,8 +13,9 @@ from __future__ import annotations
 import logging
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import List, Optional
+from typing import Generator, List, Optional
 
 from .models import Song
 
@@ -30,18 +31,22 @@ class EmberStorage:
         self.db_path = Path(db_path)
         self._ensure_tables()
 
-    def _get_connection(self) -> sqlite3.Connection:
-        """Create a connection with WAL mode enabled for smooth reads/writes."""
+    @contextmanager
+    def _connection(self) -> Generator[sqlite3.Connection, None, None]:
+        """Context manager guaranteeing connection closure and proper locking."""
         conn = sqlite3.connect(str(self.db_path), timeout=10.0)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL;")
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def _ensure_tables(self) -> None:
         """Initialize database tables and indexes."""
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            with self._get_connection() as conn:
+            with self._connection() as conn:
+                conn.execute("PRAGMA journal_mode=WAL;")
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS favorites (
@@ -81,7 +86,7 @@ class EmberStorage:
         if not song or not song.video_id:
             return
         try:
-            with self._get_connection() as conn:
+            with self._connection() as conn:
                 conn.execute(
                     """
                     INSERT INTO favorites (video_id, title, artist, duration, artwork_url, added_at)
@@ -112,7 +117,7 @@ class EmberStorage:
         if not video_id:
             return
         try:
-            with self._get_connection() as conn:
+            with self._connection() as conn:
                 conn.execute("DELETE FROM favorites WHERE video_id = ?;", (video_id,))
                 conn.commit()
             log.info("Removed favorite: %s", video_id)
@@ -124,7 +129,7 @@ class EmberStorage:
         if not video_id:
             return False
         try:
-            with self._get_connection() as conn:
+            with self._connection() as conn:
                 cursor = conn.execute(
                     "SELECT 1 FROM favorites WHERE video_id = ? LIMIT 1;", (video_id,)
                 )
@@ -137,7 +142,7 @@ class EmberStorage:
         """Fetch all favorited songs ordered by addition time (newest first)."""
         songs: List[Song] = []
         try:
-            with self._get_connection() as conn:
+            with self._connection() as conn:
                 cursor = conn.execute(
                     """
                     SELECT video_id, title, artist, duration, artwork_url
@@ -165,7 +170,7 @@ class EmberStorage:
         if not song or not song.video_id:
             return
         try:
-            with self._get_connection() as conn:
+            with self._connection() as conn:
                 conn.execute(
                     """
                     INSERT INTO history (video_id, title, artist, duration, artwork_url, played_at)
@@ -198,7 +203,7 @@ class EmberStorage:
         songs: List[Song] = []
         seen = set()
         try:
-            with self._get_connection() as conn:
+            with self._connection() as conn:
                 cursor = conn.execute(
                     """
                     SELECT video_id, title, artist, duration, artwork_url
@@ -231,7 +236,7 @@ class EmberStorage:
     def clear_history(self) -> None:
         """Clear all playback history."""
         try:
-            with self._get_connection() as conn:
+            with self._connection() as conn:
                 conn.execute("DELETE FROM history;")
                 conn.commit()
             log.info("Playback history cleared")
