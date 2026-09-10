@@ -256,6 +256,7 @@ def main() -> int:
 
     app.aboutToQuit.connect(lambda: _persist(panel, core, settings))
     app.aboutToQuit.connect(guard.release)
+    app.aboutToQuit.connect(tray.cleanup)
 
     panel.show()
     panel.ensure_topmost()

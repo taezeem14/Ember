@@ -126,11 +126,16 @@ class InstanceGuard(QObject):
             folder = "."
 
         self._lock = QLockFile(str(Path(folder) / LOCK_FILE))
-        self._lock.setStaleLockTime(0)
+        self._lock.setStaleLockTime(10000)  # 10s stale timeout (0 disables detection)
         if not self._lock.tryLock(200):
-            log.info("instance lock held elsewhere — nudging the running copy")
-            self._nudge_existing()
-            return False
+            if self._nudge_existing():
+                log.info("instance lock held elsewhere — nudging the running copy")
+                return False
+            log.warning("detected abandoned lock file from previous crash — reclaiming")
+            self._lock.removeStaleLockFile()
+            if not self._lock.tryLock(200):
+                log.error("unable to claim instance lock after clearing stale lock")
+                return False
 
         QLocalServer.removeServer(self.socket_name)
         self._server = QLocalServer(self)
@@ -147,14 +152,18 @@ class InstanceGuard(QObject):
             self._lock.unlock()
             self._lock = None
 
-    def _nudge_existing(self) -> None:
+    def _nudge_existing(self) -> bool:
         probe = QLocalSocket()
         probe.connectToServer(self.socket_name)
         if probe.waitForConnected(HANDSHAKE_TIMEOUT_MS):
             probe.write(b"reveal")
             probe.flush()
             probe.waitForBytesWritten(HANDSHAKE_TIMEOUT_MS)
-        probe.disconnectFromServer()
+            probe.waitForDisconnected(HANDSHAKE_TIMEOUT_MS)
+            probe.disconnectFromServer()
+            return True
+        probe.abort()
+        return False
 
     def _on_connection(self) -> None:
         if self._server is None:
@@ -162,7 +171,10 @@ class InstanceGuard(QObject):
         connection = self._server.nextPendingConnection()
         if connection is None:
             return
-        connection.readyRead.connect(lambda: self._consume(connection))
+        if connection.bytesAvailable() > 0:
+            self._consume(connection)
+        else:
+            connection.readyRead.connect(lambda: self._consume(connection))
         connection.disconnected.connect(connection.deleteLater)
 
     def _consume(self, connection: QLocalSocket) -> None:
@@ -187,7 +199,8 @@ class TrayPresence(QObject):
         self.icon = QSystemTrayIcon(ember_icon(), self)
         self.icon.setToolTip(f"{APP_NAME} — cozy listening")
 
-        self.menu = QMenu()
+        parent_widget = parent if isinstance(parent, QWidget) else None
+        self.menu = QMenu(parent_widget)
         self._toggle = QAction("play / pause", self.menu)
         self._back = QAction("previous track", self.menu)
         self._forward = QAction("next track", self.menu)
@@ -226,6 +239,13 @@ class TrayPresence(QObject):
 
     def hide(self) -> None:
         self.icon.hide()
+
+    def cleanup(self) -> None:
+        """Hide tray icon to eliminate Windows ghost tray icon and release menu."""
+        self.icon.hide()
+        if self.menu is not None:
+            self.menu.close()
+            self.menu.deleteLater()
 
     def notify(self, message: str, title: str = APP_NAME) -> None:
         if self.icon.isVisible():
