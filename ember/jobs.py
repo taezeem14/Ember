@@ -135,6 +135,7 @@ class LinkJob(QRunnable):
 # -------------------------------------------------------------------- artwork
 class ArtSignals(_Signals):
     arrived = pyqtSignal(str, bytes)
+    failed = pyqtSignal(str, str)
 
 
 class ArtJob(QRunnable):
@@ -150,8 +151,11 @@ class ArtJob(QRunnable):
 
     def run(self) -> None:
         try:
-            response = requests.get(self.url, timeout=self.timeout)
-            if response.status_code == 200 and response.content:
-                self.signals.arrived.emit(self.song_id, response.content)
+            with requests.get(self.url, timeout=self.timeout) as response:
+                if response.status_code == 200 and response.content:
+                    self.signals.arrived.emit(self.song_id, response.content)
+                else:
+                    self.signals.failed.emit(self.song_id, f"HTTP {response.status_code}")
         except Exception as exc:  # noqa: BLE001
             log.debug("artwork fetch failed for %s: %s", self.song_id, exc)
+            self.signals.failed.emit(self.song_id, str(exc))
