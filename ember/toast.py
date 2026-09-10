@@ -98,6 +98,7 @@ class NowPlayingToast(QWidget):
         self._anim = QPropertyAnimation(self._opacity, b"opacity")
         self._anim.setDuration(280)
         self._anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self._anim.finished.connect(self._on_fade_finished)
 
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
@@ -182,14 +183,9 @@ class NowPlayingToast(QWidget):
         self._anim.stop()
         self._anim.setStartValue(self._opacity.opacity())
         self._anim.setEndValue(0.0)
-        self._anim.finished.connect(self._on_fade_finished)
         self._anim.start()
 
     def _on_fade_finished(self) -> None:
-        try:
-            self._anim.finished.disconnect(self._on_fade_finished)
-        except (TypeError, RuntimeError):
-            pass
         if self._opacity.opacity() <= 0.05:
             self.hide()
 
