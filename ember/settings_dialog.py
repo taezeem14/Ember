@@ -22,15 +22,18 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
 
 from .config import (
+    DEFAULT_OPACITY,
     Palette,
     SETTINGS_AUTO_QUEUE,
     SETTINGS_HOTKEYS,
     SETTINGS_NORMALIZE_VOLUME,
+    SETTINGS_OPACITY,
     SETTINGS_THEME,
     SETTINGS_TOAST_ENABLED,
 )
@@ -64,6 +67,7 @@ class SettingsDialog(QDialog):
     """Preferences dialog with FontAwesome vector icons and hotkey conflict detection."""
 
     theme_changed = pyqtSignal(str)
+    opacity_changed = pyqtSignal(int)
     normalization_changed = pyqtSignal(bool)
     endless_changed = pyqtSignal(bool)
     toast_changed = pyqtSignal(bool)
@@ -81,7 +85,7 @@ class SettingsDialog(QDialog):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setFixedSize(390, 500)
+        self.setFixedSize(390, 540)
 
         self._build()
         self._load_values()
@@ -148,6 +152,20 @@ class SettingsDialog(QDialog):
         theme_row.addWidget(theme_label)
         theme_row.addWidget(self.theme_combo, 1)
         layout.addLayout(theme_row)
+
+        # Glass opacity slider
+        opacity_row = QHBoxLayout()
+        opacity_label = QLabel("Glass Opacity:", self)
+        self.opacity_slider = QSlider(Qt.Orientation.Horizontal, self)
+        self.opacity_slider.setRange(60, 100)
+        self.opacity_slider.setValue(DEFAULT_OPACITY)
+        self.opacity_val_lbl = QLabel(f"{DEFAULT_OPACITY}%", self)
+        self.opacity_val_lbl.setFixedWidth(36)
+        self.opacity_slider.valueChanged.connect(self._on_opacity_changed)
+        opacity_row.addWidget(opacity_label)
+        opacity_row.addWidget(self.opacity_slider, 1)
+        opacity_row.addWidget(self.opacity_val_lbl)
+        layout.addLayout(opacity_row)
 
         # Audio & Queue tunables
         audio_hdr = QHBoxLayout()
@@ -237,6 +255,14 @@ class SettingsDialog(QDialog):
         if idx >= 0:
             self.theme_combo.setCurrentIndex(idx)
 
+        try:
+            saved_opacity = int(self.settings.value(SETTINGS_OPACITY, DEFAULT_OPACITY))
+        except (ValueError, TypeError):
+            saved_opacity = DEFAULT_OPACITY
+        saved_opacity = max(60, min(100, saved_opacity))
+        self.opacity_slider.setValue(saved_opacity)
+        self.opacity_val_lbl.setText(f"{saved_opacity}%")
+
         norm = str(self.settings.value(SETTINGS_NORMALIZE_VOLUME, "false")).lower() in ("true", "1", "yes")
         self.chk_normalize.setChecked(norm)
 
@@ -250,6 +276,11 @@ class SettingsDialog(QDialog):
             val = str(self.settings.value(f"{SETTINGS_HOTKEYS}/{key}", default_val))
             if key in self.hotkey_inputs:
                 self.hotkey_inputs[key].setText(val)
+
+    def _on_opacity_changed(self, value: int) -> None:
+        self.opacity_val_lbl.setText(f"{value}%")
+        self.settings.setValue(SETTINGS_OPACITY, value)
+        self.opacity_changed.emit(value)
 
     def _on_theme_selected(self, theme_name: str) -> None:
         self.settings.setValue(SETTINGS_THEME, theme_name)

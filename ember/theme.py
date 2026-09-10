@@ -203,6 +203,54 @@ QWidget {
     color: $amber_hi;
 }
 
+/* ------------------------------------------------------------------ lyrics */
+#LyricsScroll { background: transparent; border: none; }
+#LyricsScroll > QWidget > QWidget { background: transparent; }
+#LyricsText {
+    color: $text;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* ------------------------------------------------------------------ mode toggles */
+#ModeToggle {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 13px;
+}
+#ModeToggle:hover { background: rgba($text_rgb, 0.10); }
+#ModeToggle:checked {
+    background: rgba($amber_rgb, 0.18);
+    border: 1px solid rgba($amber_rgb, 0.40);
+}
+
+#SleepPill {
+    background: rgba($text_rgb, 0.04);
+    border: 1px solid $line;
+    border-radius: 11px;
+    color: $muted;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+}
+#SleepPill:hover { color: $text; border: 1px solid $faint; background: rgba($text_rgb, 0.08); }
+#SleepPill:checked {
+    background: rgba($amber_rgb, 0.18);
+    border: 1px solid rgba($amber_rgb, 0.45);
+    color: $amber_hi;
+}
+
+#SpeedPill {
+    background: rgba($text_rgb, 0.04);
+    border: 1px solid $line;
+    border-radius: 11px;
+    color: $muted;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+}
+#SpeedPill:hover { color: $text; border: 1px solid $faint; background: rgba($text_rgb, 0.08); }
+
 /* ------------------------------------------------------------------ queue */
 #QueueScroll { background: transparent; border: none; }
 #QueueScroll > QWidget > QWidget { background: transparent; }
@@ -276,6 +324,26 @@ QComboBox QAbstractItemView {
     color: $text;
     selection-background-color: $raised;
     border: 1px solid $line;
+}
+QSlider::groove:horizontal {
+    height: 4px;
+    background: $line;
+    border-radius: 2px;
+}
+QSlider::sub-page:horizontal {
+    background: $amber;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    background: $amber_hi;
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
+    margin-bottom: -5px;
+    border-radius: 7px;
+}
+QSlider::handle:horizontal:hover {
+    background: #FFFFFF;
 }
 """
 )
