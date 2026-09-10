@@ -29,16 +29,22 @@
 
 No fluff, no cap — here is everything genuinely upgraded in this fork:
 
+- 🎤 **Live Lyrics Tab & Asynchronous Lyrics Worker** (`catalog.py`, `jobs.py`, `panel.py`): Dedicated 4th library tab with background lyrics extraction via `ytmusicapi` watch playlist endpoints, complete with source attribution and text selection.
+- 🌙 **Sleep Timer with 15-Second Volume Attenuation** (`panel.py` + `player.py`): 15m, 30m, 45m, and 60m countdown presets with live badge timer and smooth exponential fade-out to zero before pausing.
+- 🔀 **Upcoming Queue Shuffle & Repeat Modes** (`player.py` + `panel.py`): Non-destructive upcoming track shuffle preserving listening history, plus cycleable repeat modes (`off` ➔ `all` ➔ `one` ➔ `off`).
+- ⚡ **Variable Playback Speed Control** (`player.py` + `panel.py`): Cycle between `1.0x`, `1.25x`, `1.5x`, and `0.75x` via native `QMediaPlayer.setPlaybackRate()`.
+- 🪟 **Desktop Glass Opacity Tuner** (`config.py` + `settings_dialog.py` + `panel.py`): Live 60%–100% window translucency slider in preferences with instant real-time feedback and persistent storage.
+- 🌊 **Fluid Spring Equalizer Bars** (`panel.py`): Upgraded from stepped integer modulo ticks to a 4-bar spring-damper physics simulation (`SpringPhysics`) with harmonic wave oscillations and anti-aliased gradient fills.
 - ⚡ **Zero-Latency Thread Pool Isolation** (`player.py` + `jobs.py`): Separated stream resolution into an isolated playback thread pool so audio decoding *never* queues behind heavy radio queries or multi-image artwork downloads. Audio plays the millisecond the stream URL is resolved.
 - 🛡️ **Network Resilience & Retry Backoff** (`catalog.py` + `stream.py`): Wrapped `ytmusicapi` and `yt-dlp` in exponential backoff retry loops (`_with_retry`), robust format fallback sorting (prioritizing Windows Media Foundation-friendly M4A/AAC), and automatic dead-track auto-skipping.
 - 💾 **SQLite Local Library & Playback History** (`storage.py`): Persistent local database (`ember.db` in AppData via Python's built-in `sqlite3` — zero external bloat). Pin favorite tracks with one click (`♡` / `♥`) and revisit your listening history anytime in dedicated tabs.
 - 🎨 **Dynamic Multi-Theme Palette Engine** (`config.py` + `theme.py`): Extended `Palette` with 5 hand-crafted presets (`Amber`, `Emerald`, `Amethyst`, `Solar`, `Rose`) without breaking the single-source-of-truth architecture. Re-skins Qt stylesheets and all custom-painted widgets live at runtime.
-- 🎛️ **Preferences & Settings Panel** (`settings_dialog.py`): Dedicated modal dialog (`⚙`) for volume normalization (softens loudness spikes across tracks), endless queue toggles, runtime theme selection, and desktop toast preferences.
+- 🎛️ **Preferences & Settings Panel** (`settings_dialog.py`): Dedicated modal dialog (`⚙`) for volume normalization (softens loudness spikes across tracks), endless queue toggles, runtime theme selection, glass opacity, and desktop toast preferences.
 - ⌨️ **Configurable Hotkeys with Conflict Detection** (`settings_dialog.py` + `app.py`): Customize your playback chords directly in the UI, complete with real-time detection flagging conflicts with default Windows shortcuts (`Ctrl+C`, `Alt+F4`, `Win+L`, etc.).
 - 🔍 **Real-Time Search Debouncing** (`panel.py`): Smart 350ms input debounce on catalogue search so you can type freely without spamming network requests or stalling the UI.
 - 🍞 **Ghost "Now Playing" Desktop Toast** (`toast.py`): Subtle floating toast that slides in with album art when a track starts, completely non-intrusive and never steals window or typing focus.
 - 📜 **Rotating File Logging** (`app.py`): Standardized logging levels and upgraded to `RotatingFileHandler` (2 MB, 3 backups) so logs never balloon your disk.
-- 🧪 **Automated Test Suite & GitHub Actions CI** (`tests/` + `.github/workflows/ci.yml`): Added 18 unit and smoke tests covering models, themes, storage, and retry resilience, backed by multi-platform CI and pinned dependencies in `requirements.txt`.
+- 🧪 **Automated Test Suite & GitHub Actions CI** (`tests/` + `.github/workflows/ci.yml`): Expanded to 37 comprehensive unit, resilience, and smoke tests covering models, themes, storage, lyrics jobs, queue pruning, repeat logic, spring physics, and retry resilience.
 
 ---
 
@@ -47,13 +53,18 @@ No fluff, no cap — here is everything genuinely upgraded in this fork:
 | Feature | The Vibe |
 |:---|:---|
 | 🔍 **Search or paste** | Type any song name or drop a YouTube/YT Music link straight into the field — debounced and instant |
+| 🎤 **Live lyrics** | Sing along with auto-retrieved real-time lyrics directly in the 4th tab with source credits |
+| 🌙 **Sleep timer** | Drifts off with 15m–60m presets and 15-second gentle volume fade-out before pausing |
+| 🔀 **Shuffle & Repeat** | Non-destructive upcoming queue shuffle and cycleable repeat modes (off / all / one) |
+| ⚡ **Speed control** | Seamless playback rate adjustment between 0.75x, 1.0x, 1.25x, and 1.5x |
+| 🪟 **Glass opacity** | Window translucency tuner (60%–100%) to blend Ember cleanly over your desktop |
 | ♾️ **Endless queue** | The recommendation graph feeds look-alike tracks in behind your seed so the room never goes quiet |
 | 🪟 **Ribbon → panel** | Thin, discreet desk ribbon that blooms into an expanded player when you want to dig into the queue |
-| 🎛️ **Hand-painted controls** | Rotating vinyl disc, breathing equalizer bars, and a cozy drag-to-set circular volume dial |
+| 🎛️ **Hand-painted controls** | Rotating vinyl disc, spring-damper equalizer bars, and a cozy drag-to-set circular volume dial |
 | 📌 **Always on top** | Floats cleanly over IDEs, browsers, and terminal windows without ever stealing keyboard focus |
 | 🖥️ **Tray presence** | Play, pause, skip, or summon from the Windows system tray icon |
 | ⌨️ **Hotkeys** | Global chords for every common action, fully customizable and conflict-checked |
-| 💾 **Remembers everything** | Window position, volume, theme, favorites, and playback history persisted across reboots |
+| 💾 **Remembers everything** | Window position, volume, opacity, theme, favorites, and playback history persisted across reboots |
 
 ---
 
