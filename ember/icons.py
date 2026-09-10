@@ -118,3 +118,40 @@ def palette_icon(color: Optional[str] = None) -> QIcon:
 
 def keyboard_icon(color: Optional[str] = None) -> QIcon:
     return get_icon("fa6s.keyboard", color=color or Palette.amber, scale_factor=0.85)
+
+
+def shuffle_icon(active: bool = False) -> QIcon:
+    return get_icon(
+        "fa6s.shuffle",
+        color=Palette.amber_hi if active else Palette.muted,
+        color_active=Palette.amber_hi,
+        scale_factor=0.85,
+    )
+
+
+def repeat_icon(mode: str = "off") -> QIcon:
+    """Repeat mode icon: 'off', 'all', or 'one'."""
+    is_active = mode in ("all", "one")
+    return get_icon(
+        "fa6s.repeat",
+        color=Palette.amber_hi if is_active else Palette.muted,
+        color_active=Palette.amber_hi,
+        scale_factor=0.85,
+    )
+
+
+def lyrics_icon(color: Optional[str] = None) -> QIcon:
+    return get_icon("fa6s.quote-right", color=color or Palette.muted, scale_factor=0.8)
+
+
+def moon_icon(active: bool = False) -> QIcon:
+    return get_icon(
+        "fa6s.moon",
+        color=Palette.amber_hi if active else Palette.muted,
+        color_active=Palette.amber_hi,
+        scale_factor=0.85,
+    )
+
+
+def gauge_icon(color: Optional[str] = None) -> QIcon:
+    return get_icon("fa6s.gauge-high", color=color or Palette.muted, scale_factor=0.85)

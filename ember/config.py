@@ -47,6 +47,10 @@ SETTINGS_AUTO_QUEUE = "queue/endless"
 SETTINGS_THEME = "ui/theme"
 SETTINGS_TOAST_ENABLED = "ui/toast_enabled"
 SETTINGS_HOTKEYS = "ui/hotkeys"
+SETTINGS_OPACITY = "ui/opacity"
+SETTINGS_REPEAT = "playback/repeat"
+SETTINGS_SPEED = "playback/speed"
+DEFAULT_OPACITY = 96
 
 
 class Palette:

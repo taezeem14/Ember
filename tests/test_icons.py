@@ -11,15 +11,20 @@ from ember.icons import (
     expand_icon,
     fire_icon,
     forward_icon,
+    gauge_icon,
     heart_icon,
     history_icon,
     infinity_icon,
+    lyrics_icon,
+    moon_icon,
     music_icon,
     pause_icon,
     play_icon,
     queue_icon,
+    repeat_icon,
     search_icon,
     settings_icon,
+    shuffle_icon,
 )
 
 
@@ -44,3 +49,8 @@ def test_fontawesome_icons_instantiate() -> None:
     assert not infinity_icon().isNull()
     assert not fire_icon().isNull()
     assert not music_icon().isNull()
+    assert not shuffle_icon().isNull()
+    assert not repeat_icon().isNull()
+    assert not lyrics_icon().isNull()
+    assert not moon_icon().isNull()
+    assert not gauge_icon().isNull()
