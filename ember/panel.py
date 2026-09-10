@@ -1465,7 +1465,7 @@ class FloatingPanel(QWidget):
         job.signals.lyrics_failed.connect(self._on_lyrics_failed)
         self.core.pool.start(job)
 
-    def _on_lyrics_ready(self, video_id: str, lyrics: str, source: str) -> None:
+    def _on_lyrics_ready(self, video_id: str, lyrics: str, source: str = "") -> None:
         if self._current_lyrics_vid != video_id:
             return
         self._lyrics_loaded_for = video_id

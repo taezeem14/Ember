@@ -183,3 +183,27 @@ def test_playback_core_fade_out_and_cancel() -> None:
     core.cancel_fade()
     assert core.volume() == 80
 
+
+def test_playback_core_is_playing_pause_resume() -> None:
+    from PyQt6.QtMultimedia import QMediaPlayer
+    core = _create_core()
+    core.player.playbackState = MagicMock(return_value=QMediaPlayer.PlaybackState.StoppedState)
+    core.player.pause = MagicMock()
+    core.player.play = MagicMock()
+
+    # Initial stopped state
+    assert not core.is_playing
+
+    # When playing
+    core.player.playbackState.return_value = QMediaPlayer.PlaybackState.PlayingState
+    assert core.is_playing
+
+    # Pause
+    core.pause()
+    core.player.pause.assert_called_once()
+
+    # Resume when paused
+    core.player.playbackState.return_value = QMediaPlayer.PlaybackState.PausedState
+    core.resume()
+    core.player.play.assert_called_once()
+

@@ -15,9 +15,9 @@ playback starts the moment the stream is ready without waiting on recommendation
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 
-from PyQt6.QtCore import QObject, QThreadPool, QUrl, pyqtSignal
+from PyQt6.QtCore import QObject, QThreadPool, QTimer, QUrl, pyqtSignal
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 
 from .catalog import CatalogSource
@@ -160,6 +160,26 @@ class PlaybackCore(QObject):
         self.play(self.queue[index], expand=False)
 
     # --------------------------------------------------------------- transport
+    @property
+    def is_playing(self) -> bool:
+        """True if the media player is currently playing."""
+        return self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+
+    def pause(self) -> None:
+        """Pause audio playback."""
+        self.player.pause()
+
+    def resume(self) -> None:
+        """Resume playback if paused, or start if stopped with current track."""
+        state = self.player.playbackState()
+        if state == QMediaPlayer.PlaybackState.PausedState:
+            self.player.play()
+        elif state == QMediaPlayer.PlaybackState.StoppedState:
+            if self.current is not None:
+                self.play(self.current, expand=False)
+            elif self.queue:
+                self.play_at(0)
+
     def toggle(self) -> None:
         """Toggle play/pause state."""
         state = self.player.playbackState()

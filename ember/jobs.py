@@ -164,7 +164,10 @@ class ArtJob(QRunnable):
 # --------------------------------------------------------------------- lyrics
 class LyricsSignals(_Signals):
     done = pyqtSignal(str, str)
+    ready = pyqtSignal(str, str)
+    lyrics_ready = pyqtSignal(str, str, str)
     failed = pyqtSignal(str, str)
+    lyrics_failed = pyqtSignal(str, str)
 
 
 class LyricsJob(QRunnable):
@@ -182,8 +185,12 @@ class LyricsJob(QRunnable):
             text = self.catalog.lyrics(self.video_id)
             if text:
                 self.signals.done.emit(self.video_id, text)
+                self.signals.ready.emit(self.video_id, text)
+                self.signals.lyrics_ready.emit(self.video_id, text, "")
             else:
                 self.signals.failed.emit(self.video_id, "No lyrics found for this track")
+                self.signals.lyrics_failed.emit(self.video_id, "No lyrics found for this track")
         except Exception as exc:  # noqa: BLE001
             log.warning("lyrics job failed for %s: %s", self.video_id, exc)
             self.signals.failed.emit(self.video_id, str(exc))
+            self.signals.lyrics_failed.emit(self.video_id, str(exc))
