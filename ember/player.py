@@ -43,6 +43,8 @@ class PlaybackCore(QObject):
     length_changed = pyqtSignal(int)         # ms
     loading_changed = pyqtSignal(bool)
     notice = pyqtSignal(str)                 # short human line for the status chip
+    repeat_mode_changed = pyqtSignal(str)    # 'off', 'all', 'one'
+    rate_changed = pyqtSignal(float)         # playback rate factor (1.0, 1.25, etc.)
 
     def __init__(
         self,
@@ -73,6 +75,10 @@ class PlaybackCore(QObject):
         self.queue: List[Song] = []
         self.cursor = -1
         self.auto_queue = True
+        self.repeat_mode: str = "off"  # "off", "all", "one"
+        self.playback_rate: float = 1.0
+        self._fade_timer: Optional[QTimer] = None
+        self._pre_fade_volume: Optional[int] = None
 
         self._wanted: Optional[str] = None
         self._switching = False
@@ -168,10 +174,17 @@ class PlaybackCore(QObject):
             elif self.queue:
                 self.play_at(0)
 
-    def forward(self) -> None:
+    def forward(self, force: bool = False) -> None:
         """Skip to next track or fetch more from recommendation graph if at tail."""
+        if not force and self.repeat_mode == "one" and self.current is not None:
+            self.player.setPosition(0)
+            self.player.play()
+            return
         if self.cursor + 1 < len(self.queue):
             self.play_at(self.cursor + 1)
+            return
+        if self.repeat_mode == "all" and self.queue:
+            self.play_at(0)
             return
         if not self.queue or self._extending:
             return
@@ -189,8 +202,106 @@ class PlaybackCore(QObject):
             return
         if self.cursor > 0:
             self.play_at(self.cursor - 1)
+        elif self.repeat_mode == "all" and self.queue:
+            self.play_at(len(self.queue) - 1)
         else:
             self.player.setPosition(0)
+
+    # ------------------------------------------------------------- modes & tuning
+    def set_repeat_mode(self, mode: str) -> None:
+        """Set repeat mode ('off', 'all', 'one')."""
+        if mode not in ("off", "all", "one"):
+            mode = "off"
+        self.repeat_mode = mode
+        self.repeat_mode_changed.emit(mode)
+        if mode == "one":
+            self.notice.emit("repeat one on")
+        elif mode == "all":
+            self.notice.emit("repeat all on")
+        else:
+            self.notice.emit("repeat off")
+
+    def cycle_repeat_mode(self) -> str:
+        """Cycle repeat mode: off -> all -> one -> off."""
+        order = ["off", "all", "one"]
+        next_idx = (order.index(self.repeat_mode) + 1) % len(order)
+        self.set_repeat_mode(order[next_idx])
+        return self.repeat_mode
+
+    def shuffle_upcoming(self) -> None:
+        """Shuffle remaining unplayed tracks in place without losing history."""
+        if self.cursor + 2 >= len(self.queue):
+            self.notice.emit("no upcoming tracks to shuffle")
+            return
+        import random
+        upcoming = self.queue[self.cursor + 1 :]
+        random.shuffle(upcoming)
+        self.queue = self.queue[: self.cursor + 1] + upcoming
+        self.queue_changed.emit(self.queue)
+        self.notice.emit("upcoming queue shuffled")
+
+    def set_playback_rate(self, rate: float) -> None:
+        """Set playback rate factor (0.5x - 2.5x)."""
+        rate = max(0.5, min(2.5, float(rate)))
+        self.playback_rate = rate
+        self.player.setPlaybackRate(rate)
+        self.rate_changed.emit(rate)
+        self.notice.emit(f"speed {rate:g}x")
+
+    def fade_out_and_pause(
+        self,
+        duration_ms: int = 15000,
+        on_done: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """Smoothly attenuate volume to zero over duration_ms and pause playback."""
+        if self._fade_timer is not None:
+            self._fade_timer.stop()
+            self._fade_timer.deleteLater()
+            self._fade_timer = None
+
+        if not self.is_playing:
+            if on_done:
+                on_done()
+            return
+
+        self._pre_fade_volume = self._raw_volume
+        steps = max(10, duration_ms // 100)
+        interval = max(20, duration_ms // steps)
+        step_dec = self._raw_volume / steps
+        current_vol = float(self._raw_volume)
+
+        timer = QTimer(self)
+        self._fade_timer = timer
+
+        def _step_fade() -> None:
+            nonlocal current_vol
+            current_vol -= step_dec
+            if current_vol <= 0.5:
+                timer.stop()
+                timer.deleteLater()
+                self._fade_timer = None
+                self.pause()
+                # Restore original volume setpoint for next session
+                if self._pre_fade_volume is not None:
+                    self.set_volume(self._pre_fade_volume)
+                    self._pre_fade_volume = None
+                if on_done:
+                    on_done()
+            else:
+                self.set_volume(int(current_vol))
+
+        timer.timeout.connect(_step_fade)
+        timer.start(interval)
+
+    def cancel_fade(self) -> None:
+        """Cancel an ongoing sleep fade-out and restore original volume."""
+        if self._fade_timer is not None:
+            self._fade_timer.stop()
+            self._fade_timer.deleteLater()
+            self._fade_timer = None
+            if self._pre_fade_volume is not None:
+                self.set_volume(self._pre_fade_volume)
+                self._pre_fade_volume = None
 
     def seek(self, position_ms: int) -> None:
         """Seek to position in milliseconds."""
@@ -328,7 +439,14 @@ class PlaybackCore(QObject):
     def _relay_media_status(self, status: QMediaPlayer.MediaStatus) -> None:
         if status == QMediaPlayer.MediaStatus.EndOfMedia and not self._switching:
             log.debug("track finished — rolling into the next one")
-            self.forward()
+            if self.repeat_mode == "one" and self.current is not None:
+                self.player.setPosition(0)
+                self.player.play()
+                return
+            if self.repeat_mode == "all" and self.cursor + 1 >= len(self.queue) and self.queue:
+                self.play_at(0)
+                return
+            self.forward(force=True)
 
     def _relay_error(self, error: QMediaPlayer.Error, message: str) -> None:
         source = self.player.source().toString()
