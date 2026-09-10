@@ -52,3 +52,15 @@ def test_song_dict_serialization() -> None:
     restored = Song.from_dict(serialized)
     assert restored.is_same_as(song)
     assert restored.duration == "3:30"
+
+
+def test_song_from_dict_none_and_empty() -> None:
+    song_none = Song.from_dict(None)  # type: ignore[arg-type]
+    assert song_none.video_id == ""
+    assert song_none.title == "untitled"
+    assert song_none.byline == "unknown artist"
+
+    song_empty = Song.from_dict({})
+    assert song_empty.video_id == ""
+    assert song_empty.title == "untitled"
+    assert song_empty.byline == "unknown artist"
