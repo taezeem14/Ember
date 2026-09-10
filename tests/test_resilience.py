@@ -60,3 +60,28 @@ def test_catalog_build_parser() -> None:
     assert song.video_id == "vid_abc"
     assert song.artist == "Artist 1, Artist 2"
     assert song.artwork_url == "http://large.jpg"
+
+
+def test_catalog_build_parser_malformed_thumbnails() -> None:
+    malformed_raw = {
+        "videoId": "vid_xyz",
+        "title": "Malformed Thumbs",
+        "artists": [{"name": "Artist"}],
+        "thumbnails": [
+            {"url": "http://bad1.jpg", "width": "not_an_int", "height": "bad"},
+            {"url": "http://bad2.jpg", "width": None, "height": None},
+            {"url": "http://good.jpg", "width": 300, "height": 300},
+        ],
+    }
+    song = CatalogSource._build(malformed_raw)
+    assert song is not None
+    assert song.video_id == "vid_xyz"
+    assert song.artwork_url == "http://good.jpg"
+
+
+def test_art_job_signals() -> None:
+    from ember.jobs import ArtJob
+
+    job = ArtJob("vid_test", "http://example.com/fake.jpg")
+    assert hasattr(job.signals, "arrived")
+    assert hasattr(job.signals, "failed")
