@@ -7,6 +7,7 @@ from ember.utils import clock, looks_like_link, pretty_count
 
 def test_clock_formatting() -> None:
     assert clock(0) == "0:00"
+    assert clock(None) == "0:00"  # type: ignore[arg-type]
     assert clock(45000) == "0:45"
     assert clock(125000) == "2:05"
     assert clock(3665000) == "1:01:05"
