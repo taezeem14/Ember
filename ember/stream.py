@@ -30,9 +30,11 @@ BASE_OPTIONS: Dict[str, Any] = {
     "no_warnings": True,
     "noplaylist": True,
     "skip_download": True,
-    "retries": 4,
+    # NOTE: internal retries removed — our _probe() already does 3-attempt
+    # exponential backoff; keeping both multiplies total attempts (4×3 = 12).
+    "retries": 0,
     "socket_timeout": 15,
-    "extractor_retries": 4,
+    "extractor_retries": 0,
 }
 
 
@@ -78,7 +80,11 @@ class StreamResolver:
         if not video_id:
             return None
         target = WATCH_URL.format(video_id)
-        info = self._probe(target)
+        try:
+            info = self._probe(target)
+        except Exception as exc:
+            log.error("stream_url failed for %s: %s", video_id, exc)
+            return None
         direct = info.get("url")
         if direct and isinstance(direct, str):
             return direct
@@ -106,7 +112,11 @@ class StreamResolver:
         """Turn a pasted link into a Song so it can enter the normal queue."""
         if not url or not url.strip():
             return None
-        info = self._probe(url.strip())
+        try:
+            info = self._probe(url.strip())
+        except Exception as exc:
+            log.error("describe failed for %r: %s", url, exc)
+            return None
         video_id = info.get("id")
         if not video_id:
             return None
