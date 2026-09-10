@@ -1,18 +1,21 @@
 r"""
 player.py
-PlaybackCore owns the queue, the media player and the thread pool.
+PlaybackCore owns the queue, the media player and the thread pools.
 
 Flow for one track:
-    play(song)  ->  LoadJob (off-thread stream resolve)  ->  QMediaPlayer.setSource
-                \->  RadioJob (off-thread look-alikes)   ->  queue grows behind it
-Stream resolution and queue building are two separate jobs so audio starts the
-moment the stream is ready instead of waiting on the recommendation call.
+    play(song)  ->  LoadJob (dedicated playback pool)  ->  QMediaPlayer.setSource
+                \->  RadioJob (background pool)        ->  queue grows behind it
+
+Stream resolution and queue building are executed on isolated thread pools so audio
+playback starts the moment the stream is ready without waiting on recommendations.
+
+# Extended/upgraded by Taezeem (@taezeem14) — fork of Ember
 """
 
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from PyQt6.QtCore import QObject, QThreadPool, QUrl, pyqtSignal
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
@@ -25,10 +28,12 @@ from .stream import StreamResolver
 
 log = logging.getLogger(__name__)
 
-MAX_AUTO_SKIP = 3              # consecutive dead tracks before we stop advancing
+MAX_AUTO_SKIP = 3  # consecutive dead tracks before we stop advancing
 
 
 class PlaybackCore(QObject):
+    """Core engine controlling audio playback, thread pools, and the track queue."""
+
     song_changed = pyqtSignal(object)        # Song now loading / playing
     cursor_changed = pyqtSignal(int)         # index inside the queue
     queue_changed = pyqtSignal(list)         # whole queue replaced or extended
@@ -38,18 +43,31 @@ class PlaybackCore(QObject):
     loading_changed = pyqtSignal(bool)
     notice = pyqtSignal(str)                 # short human line for the status chip
 
-    def __init__(self, catalog: CatalogSource, resolver: StreamResolver, parent=None) -> None:
+    def __init__(
+        self,
+        catalog: CatalogSource,
+        resolver: StreamResolver,
+        parent: Optional[QObject] = None,
+    ) -> None:
         super().__init__(parent)
         self.catalog = catalog
         self.resolver = resolver
 
+        # Dedicated playback thread pool: audio resolution NEVER waits on background radio/art
+        self.playback_pool = QThreadPool(self)
+        self.playback_pool.setMaxThreadCount(2)
+
+        # General background thread pool for recommendation graph & artwork
         self.pool = QThreadPool(self)
         self.pool.setMaxThreadCount(6)
 
         self.player = QMediaPlayer(self)
         self.output = QAudioOutput(self)
         self.player.setAudioOutput(self.output)
-        self.output.setVolume(DEFAULT_VOLUME / 100.0)
+
+        self._raw_volume = DEFAULT_VOLUME
+        self._normalize_volume = False
+        self._apply_volume()
 
         self.queue: List[Song] = []
         self.cursor = -1
@@ -72,11 +90,13 @@ class PlaybackCore(QObject):
     # ------------------------------------------------------------------ state
     @property
     def current(self) -> Optional[Song]:
+        """Currently selected Song in the queue, if valid."""
         if 0 <= self.cursor < len(self.queue):
             return self.queue[self.cursor]
         return None
 
     def index_of(self, video_id: str) -> int:
+        """Find the queue index of a video_id, or -1 if not present."""
         for index, song in enumerate(self.queue):
             if song.video_id == video_id:
                 return index
@@ -95,6 +115,7 @@ class PlaybackCore(QObject):
         self.play(self.queue[start], expand=True)
 
     def play(self, song: Optional[Song], expand: Optional[bool] = None) -> None:
+        """Queue and begin stream resolution for a given song."""
         if song is None:
             return
         if expand is None:
@@ -115,11 +136,14 @@ class PlaybackCore(QObject):
         self.loading_changed.emit(True)
         self.song_changed.emit(song)
 
+        # Immediate off-thread stream resolution on isolated pool
         self._start_load(song)
         if expand:
+            # Parallel background recommendation fetch
             self._start_radio(song.video_id)
 
     def play_at(self, index: int) -> None:
+        """Jump to and play the track at specified queue index."""
         if not 0 <= index < len(self.queue):
             return
         self.cursor = index
@@ -128,6 +152,7 @@ class PlaybackCore(QObject):
 
     # --------------------------------------------------------------- transport
     def toggle(self) -> None:
+        """Toggle play/pause state."""
         state = self.player.playbackState()
         if state == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
@@ -141,6 +166,7 @@ class PlaybackCore(QObject):
                 self.play_at(0)
 
     def forward(self) -> None:
+        """Skip to next track or fetch more from recommendation graph if at tail."""
         if self.cursor + 1 < len(self.queue):
             self.play_at(self.cursor + 1)
             return
@@ -154,6 +180,7 @@ class PlaybackCore(QObject):
         self._start_radio(self.queue[-1].video_id, force=True)
 
     def back(self) -> None:
+        """Go back to previous track or restart current track if > backstep threshold."""
         if self.player.position() > SEEK_MS_BACKSTEP:
             self.player.setPosition(0)
             return
@@ -163,16 +190,35 @@ class PlaybackCore(QObject):
             self.player.setPosition(0)
 
     def seek(self, position_ms: int) -> None:
+        """Seek to position in milliseconds."""
         self.player.setPosition(max(0, int(position_ms)))
 
+    def _apply_volume(self) -> None:
+        """Compute final output volume factoring in volume normalization."""
+        factor = 0.88 if self._normalize_volume else 1.0
+        effective = (self._raw_volume / 100.0) * factor
+        self.output.setVolume(max(0.0, min(1.0, effective)))
+
     def set_volume(self, percent: int) -> None:
-        clamped = max(0, min(100, int(percent)))
-        self.output.setVolume(clamped / 100.0)
+        """Set volume percentage (0-100)."""
+        self._raw_volume = max(0, min(100, int(percent)))
+        self._apply_volume()
 
     def volume(self) -> int:
-        return int(round(self.output.volume() * 100))
+        """Get current volume percentage."""
+        return self._raw_volume
+
+    def set_normalize_volume(self, enabled: bool) -> None:
+        """Toggle volume normalization to prevent loud track spikes."""
+        self._normalize_volume = bool(enabled)
+        self._apply_volume()
+
+    @property
+    def normalize_volume(self) -> bool:
+        return self._normalize_volume
 
     def set_auto_queue(self, enabled: bool) -> None:
+        """Toggle endless queue auto-expansion."""
         self.auto_queue = bool(enabled)
 
     # ------------------------------------------------------------- entry points
@@ -182,14 +228,14 @@ class PlaybackCore(QObject):
         job = LinkJob(self.resolver, url)
         job.signals.ready.connect(self._on_link_song)
         job.signals.failed.connect(self._on_link_failed)
-        self.pool.start(job)
+        self.playback_pool.start(job)
 
     # ------------------------------------------------------------------ loading
     def _start_load(self, song: Song) -> None:
         job = LoadJob(song, self.resolver)
         job.signals.ready.connect(self._on_stream_ready)
         job.signals.failed.connect(self._on_stream_failed)
-        self.pool.start(job)
+        self.playback_pool.start(job)
 
     def _start_radio(self, seed_id: str, force: bool = False) -> None:
         if not force and self._radio_seed == seed_id:
@@ -203,7 +249,7 @@ class PlaybackCore(QObject):
     # ------------------------------------------------------------------- slots
     def _on_stream_ready(self, song: Song, url: str) -> None:
         if song.video_id != self._wanted:
-            return                       # the user already moved on
+            return  # user already moved on
         song.stream_url = url
         self._failed_source = None
         self._error_streak = 0
@@ -217,8 +263,12 @@ class PlaybackCore(QObject):
             return
         self._switching = False
         self.loading_changed.emit(False)
-        self.notice.emit("couldn't pull that track")
+        self.notice.emit("skipping unavailable track")
         log.warning("playback aborted for %s: %s", song.video_id, message)
+
+        # Auto-recover by advancing to the next available track
+        if self.cursor + 1 < len(self.queue):
+            self.forward()
 
     def _on_radio_ready(self, seed_id: str, songs: list) -> None:
         self._extending = False
@@ -268,7 +318,7 @@ class PlaybackCore(QObject):
     def _relay_error(self, error: QMediaPlayer.Error, message: str) -> None:
         source = self.player.source().toString()
         if source and source == self._failed_source:
-            return                       # backend is retry-looping on a dead source
+            return  # backend is retry-looping on a dead source
         self._failed_source = source
         log.warning("media player error (%s): %s", error, message)
 
