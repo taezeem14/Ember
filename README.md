@@ -8,6 +8,14 @@
 
 </div>
 
+<div align="center">
+
+<img src="ember1.png" alt="Ember ribbon" width="440">
+
+<img src="ember2.png" alt="Ember expanded player" width="440">
+
+</div>
+
 ---
 
 Ember lives in the corner of your desktop. Most of the time it is a thin amber
