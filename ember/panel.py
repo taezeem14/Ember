@@ -2,11 +2,8 @@
 panel.py
 The floating Ember surface: a compact ribbon that expands into a full panel.
 
-Layout is hand-built rather than designer-generated so the drag maths, the
-z-order forcing and the expand/collapse resize all stay in one place. Every
-colour comes from config.Palette via theme.panel_stylesheet() — the only
-painted widgets are the ones Qt stylesheets cannot express (the vinyl disc,
-the volume dial, the equaliser bars).
+Layout is hand-built with high-DPI FontAwesome 6 vector icons, dynamic palette
+tinting, responsive search debouncing, and persistent favorites/history tabs.
 
 # Extended/upgraded by Taezeem (@taezeem14) — fork of Ember
 """
@@ -60,6 +57,23 @@ from .config import (
     VINYL_DEGREES,
     VINYL_TICK_MS,
 )
+from .icons import (
+    backward_icon,
+    close_icon,
+    collapse_icon,
+    expand_icon,
+    fire_icon,
+    forward_icon,
+    heart_icon,
+    history_icon,
+    infinity_icon,
+    music_icon,
+    pause_icon,
+    play_icon,
+    queue_icon,
+    search_icon,
+    settings_icon,
+)
 from .jobs import ArtJob, SearchJob
 from .models import Song
 from .player import PlaybackCore
@@ -79,7 +93,7 @@ SWP_NOACTIVATE = 0x0010
 
 # ---------------------------------------------------------------- paint helpers
 def rounded_pixmap(source: QPixmap, radius: int) -> QPixmap:
-    """Clip a pixmap to a rounded square, scaled to fill first."""
+    """Clip a pixmap to a rounded square with smooth anti-aliased corners."""
     scaled = source.scaled(
         QSize(radius * 2, radius * 2).expandedTo(source.size()),
         Qt.AspectRatioMode.KeepAspectRatioByExpanding,
@@ -95,7 +109,7 @@ def rounded_pixmap(source: QPixmap, radius: int) -> QPixmap:
     painter = QPainter(canvas)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     path = QPainterPath()
-    path.addRoundedRect(QRectF(0, 0, side, side), side * 0.22, side * 0.22)
+    path.addRoundedRect(QRectF(0, 0, side, side), side * 0.24, side * 0.24)
     painter.setClipPath(path)
     painter.drawPixmap(0, 0, cropped)
     painter.end()
@@ -104,7 +118,7 @@ def rounded_pixmap(source: QPixmap, radius: int) -> QPixmap:
 
 # ------------------------------------------------------------------ primitives
 class Hairline(QFrame):
-    """One-pixel separator that inherits the palette line colour."""
+    """One-pixel separator that dynamically adapts to the current palette line colour."""
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -195,8 +209,8 @@ class SeekBar(QWidget):
             painter.drawRoundedRect(fill_rect, 2.5, 2.5)
 
         # Handle knob
-        handle_x = min(w - 9, max(0.0, fill_w - 4.5))
-        handle_rect = QRectF(handle_x, y - 2, 9.0, 9.0)
+        handle_x = min(w - 10, max(0.0, fill_w - 5.0))
+        handle_rect = QRectF(handle_x, y - 2.5, 10.0, 10.0)
         painter.setBrush(QColor(Palette.text))
         painter.setPen(QPen(QColor(Palette.amber), 2.0))
         painter.drawEllipse(handle_rect)
@@ -381,16 +395,24 @@ class QueueRow(QFrame):
     """One line in the queue / library list. Clicking it plays that item."""
 
     picked = pyqtSignal(int)
+    fav_toggled = pyqtSignal(int)
 
-    def __init__(self, index: int, song: Song, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        index: int,
+        song: Song,
+        is_fav: bool = False,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
         self.index = index
         self.song = song
-        self.setFixedHeight(34)
+        self.is_fav = is_fav
+        self.setFixedHeight(36)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 0, 10, 0)
+        layout.setContentsMargins(10, 0, 10, 0)
         layout.setSpacing(8)
 
         self.meter = EqualiserBars(self)
@@ -404,10 +426,23 @@ class QueueRow(QFrame):
         self.stamp.setObjectName("Clock")
         layout.addWidget(self.stamp, 0, Qt.AlignmentFlag.AlignRight)
 
+        self.fav_btn = QPushButton(self)
+        self.fav_btn.setObjectName("HeartButton")
+        self.fav_btn.setFixedSize(22, 22)
+        self.fav_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.fav_btn.setIcon(heart_icon(is_fav))
+        self.fav_btn.setIconSize(QSize(13, 13))
+        self.fav_btn.clicked.connect(lambda: self.fav_toggled.emit(self.index))
+        layout.addWidget(self.fav_btn)
+
         self._active = False
         self._hover = False
-        elide_into(self.title, song.title, 210)
+        elide_into(self.title, song.title, 200)
         self.stamp.setText(song.duration or "")
+
+    def set_favorite(self, is_fav: bool) -> None:
+        self.is_fav = is_fav
+        self.fav_btn.setIcon(heart_icon(is_fav))
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -419,7 +454,7 @@ class QueueRow(QFrame):
         self._active = active
         self.meter.set_on(active)
         self.title.setStyleSheet(
-            f"color: {Palette.amber_hi};" if active else f"color: {Palette.text};"
+            f"color: {Palette.amber_hi}; font-weight: 700;" if active else f"color: {Palette.text}; font-weight: 500;"
         )
         self.update()
 
@@ -444,21 +479,21 @@ class QueueRow(QFrame):
         if self._active:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(Palette.amber_lo))
-            painter.setOpacity(0.20)
-            painter.drawRoundedRect(QRectF(0, 1, self.width(), self.height() - 2), 9, 9)
+            painter.setOpacity(0.18)
+            painter.drawRoundedRect(QRectF(0, 1, self.width(), self.height() - 2), 10, 10)
             painter.setOpacity(1.0)
             painter.setBrush(QColor(Palette.amber))
             painter.drawRoundedRect(QRectF(3, 9, 2.5, self.height() - 18), 1.25, 1.25)
         elif self._hover:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(244, 233, 221, 14))
-            painter.drawRoundedRect(QRectF(0, 1, self.width(), self.height() - 2), 9, 9)
+            painter.drawRoundedRect(QRectF(0, 1, self.width(), self.height() - 2), 10, 10)
         painter.end()
 
 
 # ----------------------------------------------------------------- main surface
 class FloatingPanel(QWidget):
-    """Compact ribbon that expands into the full Ember panel with favorites, history, and search."""
+    """Compact ribbon that expands into the full Ember panel with FontAwesome 6 vector icons."""
 
     closed = pyqtSignal()
     endless_toggled = pyqtSignal(bool)
@@ -481,7 +516,7 @@ class FloatingPanel(QWidget):
         self._scrubbing = False
         self._art_cache: Dict[str, QPixmap] = {}
         self._art_pending: set = set()
-        self._active_tab = "queue"  # "queue", "favorites", "history"
+        self._active_tab = "queue"
         self._view_songs: List[Song] = []
 
         self.toast = NowPlayingToast()
@@ -498,6 +533,7 @@ class FloatingPanel(QWidget):
         self._build()
         self._wire()
         self._apply_size()
+        self._update_all_icons()
 
     # ------------------------------------------------------------------ build
     def _build(self) -> None:
@@ -510,9 +546,9 @@ class FloatingPanel(QWidget):
         outer.addWidget(self.shell)
 
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(34)
-        shadow.setOffset(0, 8)
-        shadow.setColor(QColor(0, 0, 0, 165))
+        shadow.setBlurRadius(36)
+        shadow.setOffset(0, 10)
+        shadow.setColor(QColor(0, 0, 0, 180))
         self.shell.setGraphicsEffect(shadow)
 
         stage = QVBoxLayout(self.shell)
@@ -532,9 +568,9 @@ class FloatingPanel(QWidget):
 
         row = QHBoxLayout(holder)
         row.setContentsMargins(10, 0, 10, 0)
-        row.setSpacing(10)
+        row.setSpacing(8)
 
-        self.ribbon_art = self._art_label(ART_COMPACT, 9)
+        self.ribbon_art = self._art_label(ART_COMPACT, 10)
         row.addWidget(self.ribbon_art)
 
         words = QVBoxLayout()
@@ -548,18 +584,31 @@ class FloatingPanel(QWidget):
         words.addWidget(self.ribbon_artist)
         row.addLayout(words, 1)
 
-        self.ribbon_fav = self._heart_button()
+        self.ribbon_fav = QPushButton(self)
+        self.ribbon_fav.setObjectName("HeartButton")
+        self.ribbon_fav.setFixedSize(28, 28)
+        self.ribbon_fav.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.ribbon_fav.setToolTip("pin to favorites")
+        self.ribbon_fav.clicked.connect(self._toggle_favorite)
         row.addWidget(self.ribbon_fav)
 
-        self.ribbon_prev = self._ghost("⏮", 26)
-        self.ribbon_play = self._round("▶", 38)
-        self.ribbon_next = self._ghost("⏭", 26)
+        self.ribbon_prev = self._ghost_btn(28)
+        self.ribbon_prev.setToolTip("previous track")
+        self.ribbon_play = QPushButton(self)
+        self.ribbon_play.setObjectName("RoundPlay")
+        self.ribbon_play.setFixedSize(38, 38)
+        self.ribbon_play.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.ribbon_play.setToolTip("play / pause")
+
+        self.ribbon_next = self._ghost_btn(28)
+        self.ribbon_next.setToolTip("next track")
+
         row.addWidget(self.ribbon_prev)
         row.addWidget(self.ribbon_play)
         row.addWidget(self.ribbon_next)
 
-        self.ribbon_open = self._pill("⌃", 26)
-        self.ribbon_open.setToolTip("open the panel")
+        self.ribbon_open = self._pill_btn(28)
+        self.ribbon_open.setToolTip("expand player")
         row.addWidget(self.ribbon_open)
 
         return holder
@@ -590,14 +639,21 @@ class FloatingPanel(QWidget):
         row.setContentsMargins(2, 0, 0, 0)
         row.setSpacing(8)
 
+        brand_row = QHBoxLayout()
+        brand_row.setSpacing(6)
+        self.fire_label = QLabel(self)
+        self.fire_label.setPixmap(fire_icon().pixmap(16, 16))
+        mark = QLabel(APP_NAME.upper(), self)
+        mark.setObjectName("Display")
+        brand_row.addWidget(self.fire_label)
+        brand_row.addWidget(mark)
+
         words = QVBoxLayout()
         words.setContentsMargins(0, 0, 0, 0)
         words.setSpacing(0)
-        mark = QLabel(APP_NAME, self)
-        mark.setObjectName("Display")
+        words.addLayout(brand_row)
         tail = QLabel(APP_TAGLINE.upper(), self)
         tail.setObjectName("Tagline")
-        words.addWidget(mark)
         words.addWidget(tail)
         row.addLayout(words, 1)
 
@@ -605,8 +661,8 @@ class FloatingPanel(QWidget):
         self.status.setObjectName("StatusChip")
         row.addWidget(self.status, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self.collapse_pill = self._pill("⌄", 26)
-        self.collapse_pill.setToolTip("collapse")
+        self.collapse_pill = self._pill_btn(28)
+        self.collapse_pill.setToolTip("collapse player")
         row.addWidget(self.collapse_pill, 0, Qt.AlignmentFlag.AlignVCenter)
 
         return row
@@ -623,7 +679,7 @@ class FloatingPanel(QWidget):
         top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(11)
 
-        self.hero_art = self._art_label(ART_HERO, 18)
+        self.hero_art = self._art_label(ART_HERO, 14)
         top.addWidget(self.hero_art, 0, Qt.AlignmentFlag.AlignTop)
 
         self.disc = VinylDisc(ART_HERO - 22, card)
@@ -641,7 +697,12 @@ class FloatingPanel(QWidget):
         words.addStretch(1)
         top.addLayout(words, 1)
 
-        self.hero_fav = self._heart_button()
+        self.hero_fav = QPushButton(card)
+        self.hero_fav.setObjectName("HeartButton")
+        self.hero_fav.setFixedSize(28, 28)
+        self.hero_fav.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.hero_fav.setToolTip("pin to favorites")
+        self.hero_fav.clicked.connect(self._toggle_favorite)
         top.addWidget(self.hero_fav, 0, Qt.AlignmentFlag.AlignTop)
 
         column.addLayout(top)
@@ -674,15 +735,17 @@ class FloatingPanel(QWidget):
 
         self.field = QLineEdit(self)
         self.field.setObjectName("SearchField")
-        self.field.setPlaceholderText("search, or paste a link")
+        self.field.setPlaceholderText("Search tracks, artists, or drop YouTube link...")
         self.field.setFixedHeight(36)
         self.field.setClearButtonEnabled(True)
         row.addWidget(self.field, 1)
 
-        self.find = QPushButton("find", self)
+        self.find = QPushButton(self)
         self.find.setObjectName("AmberButton")
         self.find.setFixedHeight(36)
+        self.find.setFixedWidth(44)
         self.find.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.find.setToolTip("search catalogue")
         row.addWidget(self.find)
 
         return row
@@ -692,18 +755,24 @@ class FloatingPanel(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
 
-        self.tab_queue = QPushButton("UP NEXT", self)
+        self.tab_queue = QPushButton(" Up Next", self)
         self.tab_queue.setObjectName("TabButton")
         self.tab_queue.setCheckable(True)
         self.tab_queue.setChecked(True)
+        self.tab_queue.setIcon(queue_icon())
+        self.tab_queue.setIconSize(QSize(12, 12))
 
-        self.tab_favs = QPushButton("FAVORITES", self)
+        self.tab_favs = QPushButton(" Favorites", self)
         self.tab_favs.setObjectName("TabButton")
         self.tab_favs.setCheckable(True)
+        self.tab_favs.setIcon(heart_icon(True))
+        self.tab_favs.setIconSize(QSize(12, 12))
 
-        self.tab_history = QPushButton("HISTORY", self)
+        self.tab_history = QPushButton(" History", self)
         self.tab_history.setObjectName("TabButton")
         self.tab_history.setCheckable(True)
+        self.tab_history.setIcon(history_icon())
+        self.tab_history.setIconSize(QSize(12, 12))
 
         row.addWidget(self.tab_queue)
         row.addWidget(self.tab_favs)
@@ -727,7 +796,7 @@ class FloatingPanel(QWidget):
         self.queue_host = QWidget()
         self.queue_list = QVBoxLayout(self.queue_host)
         self.queue_list.setContentsMargins(0, 0, 4, 0)
-        self.queue_list.setSpacing(2)
+        self.queue_list.setSpacing(3)
         self.queue_list.addStretch(1)
         self.queue_scroll.setWidget(self.queue_host)
 
@@ -743,8 +812,13 @@ class FloatingPanel(QWidget):
         row.setContentsMargins(2, 0, 0, 0)
         row.setSpacing(8)
 
-        self.endless = self._chip("endless", True)
-        self.endless.setToolTip("keep adding look-alike tracks when the queue runs dry")
+        self.endless = QPushButton(" Endless", self)
+        self.endless.setObjectName("Chip")
+        self.endless.setCheckable(True)
+        self.endless.setChecked(True)
+        self.endless.setIcon(infinity_icon())
+        self.endless.setIconSize(QSize(13, 13))
+        self.endless.setToolTip("keep adding look-alike tracks when queue runs dry")
         row.addWidget(self.endless)
 
         self.count = QLabel("0 tracks", self)
@@ -756,13 +830,15 @@ class FloatingPanel(QWidget):
         self.volume = VolumeDial(self.core.volume(), self)
         row.addWidget(self.volume, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self.settings_btn = self._pill("⚙", 26)
+        self.settings_btn = self._pill_btn(28)
         self.settings_btn.setToolTip("preferences & tunables")
         self.settings_btn.clicked.connect(self._open_settings)
         row.addWidget(self.settings_btn)
 
-        self.quit = self._pill("✕", 26)
+        self.quit = QPushButton(self)
         self.quit.setObjectName("PillClose")
+        self.quit.setFixedSize(28, 28)
+        self.quit.setCursor(Qt.CursorShape.PointingHandCursor)
         self.quit.setToolTip("close Ember")
         row.addWidget(self.quit)
 
@@ -780,44 +856,52 @@ class FloatingPanel(QWidget):
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         return label
 
-    def _heart_button(self) -> QPushButton:
-        btn = QPushButton("♡", self)
-        btn.setObjectName("HeartButton")
-        btn.setFixedSize(26, 26)
+    def _ghost_btn(self, side: int) -> QPushButton:
+        btn = QPushButton(self)
+        btn.setObjectName("Ghost")
+        btn.setFixedSize(side, side)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setToolTip("pin to favorites")
-        btn.clicked.connect(self._toggle_favorite)
         return btn
 
-    def _ghost(self, glyph: str, side: int) -> QPushButton:
-        button = QPushButton(glyph, self)
-        button.setObjectName("Ghost")
-        button.setFixedSize(side, side)
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        return button
+    def _pill_btn(self, side: int) -> QPushButton:
+        btn = QPushButton(self)
+        btn.setObjectName("Pill")
+        btn.setFixedSize(side, side)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        return btn
 
-    def _round(self, glyph: str, side: int) -> QPushButton:
-        button = QPushButton(glyph, self)
-        button.setObjectName("RoundPlay")
-        button.setFixedSize(side, side)
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        return button
+    def _update_all_icons(self) -> None:
+        """Refresh all vector FontAwesome icons tinted to the active palette."""
+        is_playing = self.core.player.playbackState() == self.core.player.PlaybackState.PlayingState
+        self.ribbon_play.setIcon(pause_icon() if is_playing else play_icon())
+        self.ribbon_play.setIconSize(QSize(16, 16))
 
-    def _pill(self, glyph: str, side: int) -> QPushButton:
-        button = QPushButton(glyph, self)
-        button.setObjectName("Pill")
-        button.setFixedSize(side, side)
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        return button
+        self.ribbon_prev.setIcon(backward_icon())
+        self.ribbon_prev.setIconSize(QSize(14, 14))
 
-    def _chip(self, text: str, checked: bool) -> QPushButton:
-        button = QPushButton(text, self)
-        button.setObjectName("Chip")
-        button.setCheckable(True)
-        button.setChecked(checked)
-        button.setFixedHeight(26)
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        return button
+        self.ribbon_next.setIcon(forward_icon())
+        self.ribbon_next.setIconSize(QSize(14, 14))
+
+        self.ribbon_open.setIcon(expand_icon())
+        self.ribbon_open.setIconSize(QSize(14, 14))
+
+        self.collapse_pill.setIcon(collapse_icon())
+        self.collapse_pill.setIconSize(QSize(14, 14))
+
+        self.find.setIcon(search_icon())
+        self.find.setIconSize(QSize(15, 15))
+
+        self.settings_btn.setIcon(settings_icon())
+        self.settings_btn.setIconSize(QSize(14, 14))
+
+        self.quit.setIcon(close_icon())
+        self.quit.setIconSize(QSize(14, 14))
+
+        self.fire_label.setPixmap(fire_icon().pixmap(16, 16))
+
+        curr = self.core.current
+        is_fav = bool(curr and self.storage and self.storage.is_favorite(curr.video_id))
+        self._update_favorite_buttons(is_fav)
 
     # ------------------------------------------------------------------- wiring
     def _wire(self) -> None:
@@ -894,8 +978,10 @@ class FloatingPanel(QWidget):
 
         self._empty.setVisible(False)
         for index, song in enumerate(songs):
-            row = QueueRow(index, song, self.queue_host)
+            is_fav = bool(self.storage and self.storage.is_favorite(song.video_id))
+            row = QueueRow(index, song, is_fav=is_fav, parent=self.queue_host)
             row.picked.connect(self._on_row_picked)
+            row.fav_toggled.connect(self._on_row_fav_toggled)
             if index == active_idx:
                 row.set_active(True)
             self.queue_list.insertWidget(index + 1, row)
@@ -909,8 +995,25 @@ class FloatingPanel(QWidget):
         if self._active_tab == "queue":
             self.core.play_at(index)
         else:
-            # Play from favorites or history into the queue
             self.core.play(picked_song, expand=True)
+
+    def _on_row_fav_toggled(self, index: int) -> None:
+        if not self.storage or not 0 <= index < len(self._view_songs):
+            return
+        target = self._view_songs[index]
+        if self.storage.is_favorite(target.video_id):
+            self.storage.remove_favorite(target.video_id)
+            self._set_status(f"unpinned {target.title[:18]}")
+        else:
+            self.storage.add_favorite(target)
+            self._set_status(f"pinned {target.title[:18]} ♥")
+
+        # Update now card hearts if it's the current song
+        curr = self.core.current
+        if curr and curr.video_id == target.video_id:
+            self._update_favorite_buttons(self.storage.is_favorite(target.video_id))
+
+        self._refresh_tab_content()
 
     # ------------------------------------------------------------- favorites
     def _toggle_favorite(self) -> None:
@@ -926,15 +1029,13 @@ class FloatingPanel(QWidget):
             self._update_favorite_buttons(True)
             self._set_status("pinned to favorites ♥")
 
-        if self._active_tab == "favorites":
-            self._refresh_tab_content()
+        self._refresh_tab_content()
 
     def _update_favorite_buttons(self, is_fav: bool) -> None:
-        char = "♥" if is_fav else "♡"
-        color_style = f"color: {Palette.clay}; font-size: 15px;" if is_fav else f"color: {Palette.muted}; font-size: 14px;"
+        icon = heart_icon(is_fav)
         for btn in (self.ribbon_fav, self.hero_fav):
-            btn.setText(char)
-            btn.setStyleSheet(f"#HeartButton {{ {color_style} }}")
+            btn.setIcon(icon)
+            btn.setIconSize(QSize(15, 15))
 
     # ------------------------------------------------------------- settings
     def _open_settings(self) -> None:
@@ -956,16 +1057,13 @@ class FloatingPanel(QWidget):
         self.panel_hairline.reload_theme()
         self.toast.reload_theme()
 
+        self._update_all_icons()
+
         # Force repaint of custom-painted elements
         self.disc.update()
         self.volume.update()
         self.seek.update()
         self.update()
-
-        # Update favorite button color if active
-        curr = self.core.current
-        if curr and self.storage:
-            self._update_favorite_buttons(self.storage.is_favorite(curr.video_id))
 
         if self.expanded:
             self._refresh_tab_content()
@@ -1100,8 +1198,9 @@ class FloatingPanel(QWidget):
         if cached is not None:
             self._paint_art(song.video_id, cached)
         else:
-            self.ribbon_art.clear()
-            self.hero_art.clear()
+            fallback_pix = music_icon(Palette.amber_hi).pixmap(24, 24)
+            self.ribbon_art.setPixmap(fallback_pix)
+            self.hero_art.setPixmap(music_icon(Palette.amber_hi).pixmap(40, 40))
             self._request_art(song)
 
         # Show desktop toast if enabled
@@ -1123,7 +1222,7 @@ class FloatingPanel(QWidget):
                     widget.set_active(widget.index == index)
 
     def _on_playing(self, playing: bool) -> None:
-        self.ribbon_play.setText("⏸" if playing else "▶")
+        self.ribbon_play.setIcon(pause_icon() if playing else play_icon())
         self.disc.set_spinning(playing)
         self._set_status("playing" if playing else "paused")
 

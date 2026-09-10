@@ -35,6 +35,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .config import Palette
+from .icons import music_icon
 from .models import Song
 from .theme import toast_stylesheet
 from .utils import elide_into
@@ -157,9 +158,9 @@ class NowPlayingToast(QWidget):
             self.art_label.setPixmap(_rounded_thumb(pixmap, 44))
         else:
             self.art_label.clear()
-            self.art_label.setText("♫")
+            self.art_label.setPixmap(music_icon(Palette.amber_hi).pixmap(22, 22))
             self.art_label.setStyleSheet(
-                f"background: {Palette.raised}; color: {Palette.amber_hi}; font-size: 16px; border: 1px solid {Palette.line}; border-radius: 8px;"
+                f"background: {Palette.raised}; border: 1px solid {Palette.line}; border-radius: 8px;"
             )
 
         self._position_toast()

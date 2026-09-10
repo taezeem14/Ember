@@ -1,6 +1,7 @@
 # Pinned dependencies for Ember desktop music companion
 # Maintained by Taezeem (@taezeem14) — fork of Ember
 PyQt6>=6.6.0,<6.12.0
+qtawesome>=1.3.0
 ytmusicapi>=1.7.0,<2.0.0
 yt-dlp>=2024.8.0
 requests>=2.31.0,<3.0.0

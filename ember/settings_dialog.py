@@ -3,7 +3,7 @@ settings_dialog.py
 Preferences panel for Ember: theme switching, audio normalization,
 endless queue toggle, desktop notifications, and hotkey configuration.
 
-# Written by Taezeem (@taezeem14) — fork of Ember
+# Extended/upgraded by Taezeem (@taezeem14) — fork of Ember
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, Optional
 
-from PyQt6.QtCore import QPoint, QSettings, Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QSettings, QSize, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -34,6 +34,7 @@ from .config import (
     SETTINGS_THEME,
     SETTINGS_TOAST_ENABLED,
 )
+from .icons import close_icon, keyboard_icon, palette_icon, settings_icon, sliders_icon
 from .theme import settings_stylesheet
 
 log = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ DEFAULT_HOTKEYS: Dict[str, str] = {
 
 
 class SettingsDialog(QDialog):
-    """Preferences dialog with instant theme preview and hotkey conflict detection."""
+    """Preferences dialog with FontAwesome vector icons and hotkey conflict detection."""
 
     theme_changed = pyqtSignal(str)
     normalization_changed = pyqtSignal(bool)
@@ -80,7 +81,7 @@ class SettingsDialog(QDialog):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setFixedSize(380, 480)
+        self.setFixedSize(390, 500)
 
         self._build()
         self._load_values()
@@ -95,37 +96,48 @@ class SettingsDialog(QDialog):
         outer.addWidget(self.shell)
 
         shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(30)
-        shadow.setOffset(0, 8)
+        shadow.setBlurRadius(36)
+        shadow.setOffset(0, 10)
         shadow.setColor(Qt.GlobalColor.black)
         self.shell.setGraphicsEffect(shadow)
 
         layout = QVBoxLayout(self.shell)
-        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setContentsMargins(20, 18, 20, 18)
         layout.setSpacing(12)
 
-        # Header
+        # Header with FA Gear Icon
         header = QHBoxLayout()
+        icon_lbl = QLabel(self)
+        icon_lbl.setPixmap(settings_icon(Palette.amber_hi).pixmap(20, 20))
         words = QVBoxLayout()
-        title = QLabel("PREFERENCES", self)
+        title = QLabel("PREFERENCES & TUNABLES", self)
         title.setObjectName("SettingsTitle")
-        sub = QLabel("tune your ember companion", self)
+        sub = QLabel("tune your desktop music companion", self)
         sub.setObjectName("SettingsSub")
         words.addWidget(title)
         words.addWidget(sub)
+        header.addWidget(icon_lbl)
         header.addLayout(words, 1)
 
-        close_btn = QPushButton("✕", self)
+        close_btn = QPushButton(self)
         close_btn.setObjectName("PillClose")
         close_btn.setFixedSize(26, 26)
+        close_btn.setIcon(close_icon())
+        close_btn.setIconSize(QSize(13, 13))
         close_btn.clicked.connect(self.accept)
         header.addWidget(close_btn)
         layout.addLayout(header)
 
         # Theme selection
+        theme_hdr = QHBoxLayout()
+        pal_ico = QLabel(self)
+        pal_ico.setPixmap(palette_icon(Palette.amber).pixmap(14, 14))
         theme_sec = QLabel("APPEARANCE", self)
         theme_sec.setObjectName("SettingsSection")
-        layout.addWidget(theme_sec)
+        theme_hdr.addWidget(pal_ico)
+        theme_hdr.addWidget(theme_sec)
+        theme_hdr.addStretch(1)
+        layout.addLayout(theme_hdr)
 
         theme_row = QHBoxLayout()
         theme_label = QLabel("Color Palette:", self)
@@ -138,9 +150,15 @@ class SettingsDialog(QDialog):
         layout.addLayout(theme_row)
 
         # Audio & Queue tunables
+        audio_hdr = QHBoxLayout()
+        slide_ico = QLabel(self)
+        slide_ico.setPixmap(sliders_icon(Palette.amber).pixmap(14, 14))
         audio_sec = QLabel("PLAYBACK & QUEUE", self)
         audio_sec.setObjectName("SettingsSection")
-        layout.addWidget(audio_sec)
+        audio_hdr.addWidget(slide_ico)
+        audio_hdr.addWidget(audio_sec)
+        audio_hdr.addStretch(1)
+        layout.addLayout(audio_hdr)
 
         self.chk_normalize = QCheckBox("Volume Normalization (soften loudness spikes)", self)
         self.chk_normalize.toggled.connect(self._on_normalize_toggled)
@@ -155,9 +173,15 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.chk_toast)
 
         # Hotkeys
+        hotkey_hdr = QHBoxLayout()
+        key_ico = QLabel(self)
+        key_ico.setPixmap(keyboard_icon(Palette.amber).pixmap(14, 14))
         hotkey_sec = QLabel("HOTKEY CHORDS", self)
         hotkey_sec.setObjectName("SettingsSection")
-        layout.addWidget(hotkey_sec)
+        hotkey_hdr.addWidget(key_ico)
+        hotkey_hdr.addWidget(hotkey_sec)
+        hotkey_hdr.addStretch(1)
+        layout.addLayout(hotkey_hdr)
 
         self.hotkey_inputs: Dict[str, QLineEdit] = {}
         labels = [
@@ -173,7 +197,7 @@ class SettingsDialog(QDialog):
             hlabel.setFixedWidth(85)
             hinput = QLineEdit(self)
             hinput.setObjectName("SearchField")
-            hinput.setFixedHeight(26)
+            hinput.setFixedHeight(28)
             hinput.textChanged.connect(self._validate_hotkeys)
             self.hotkey_inputs[key] = hinput
             hrow.addWidget(hlabel)
@@ -181,7 +205,7 @@ class SettingsDialog(QDialog):
             layout.addLayout(hrow)
 
         self.conflict_warn = QLabel("", self)
-        self.conflict_warn.setStyleSheet("color: #E26D85; font-size: 10px; font-weight: 600;")
+        self.conflict_warn.setStyleSheet("color: #E26D85; font-size: 10px; font-weight: 700;")
         self.conflict_warn.setVisible(False)
         layout.addWidget(self.conflict_warn)
 
@@ -191,14 +215,17 @@ class SettingsDialog(QDialog):
         footer = QHBoxLayout()
         reset_btn = QPushButton("Reset Hotkeys", self)
         reset_btn.setObjectName("Pill")
+        reset_btn.setFixedHeight(28)
+        reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         reset_btn.clicked.connect(self._reset_hotkeys)
         footer.addWidget(reset_btn)
 
         footer.addStretch(1)
 
-        save_btn = QPushButton("Done", self)
+        save_btn = QPushButton("Save & Done", self)
         save_btn.setObjectName("AmberButton")
         save_btn.setFixedHeight(28)
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         save_btn.clicked.connect(self._save_and_close)
         footer.addWidget(save_btn)
 
