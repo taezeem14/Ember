@@ -156,6 +156,34 @@ class CatalogSource:
         log.debug("radio for %s -> %d track(s)", seed_id, len(related))
         return related
 
+    def lyrics(self, video_id: str) -> Optional[str]:
+        """Fetch lyrics text from YouTube Music for a given video_id."""
+        video_id = (video_id or "").strip()
+        if not video_id:
+            return None
+
+        def _do_lyrics() -> Optional[str]:
+            watch = self.api.get_watch_playlist(videoId=video_id)
+            lyrics_id = watch.get("lyrics")
+            if not lyrics_id:
+                return None
+            data = self.api.get_lyrics(lyrics_id)
+            if not data or not isinstance(data, dict):
+                return None
+            text = data.get("lyrics")
+            return str(text).strip() if text else None
+
+        try:
+            return _with_retry(
+                _do_lyrics,
+                max_attempts=2,
+                base_delay=0.5,
+                operation_name=f"lyrics({video_id})",
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("lyrics lookup failed for %s: %s", video_id, exc)
+            return None
+
     # ----------------------------------------------------------------- parsing
     @staticmethod
     def _build(item: Dict[str, Any], duration_key: str = "duration") -> Optional[Song]:

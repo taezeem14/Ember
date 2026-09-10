@@ -159,3 +159,31 @@ class ArtJob(QRunnable):
         except Exception as exc:  # noqa: BLE001
             log.debug("artwork fetch failed for %s: %s", self.song_id, exc)
             self.signals.failed.emit(self.song_id, str(exc))
+
+
+# --------------------------------------------------------------------- lyrics
+class LyricsSignals(_Signals):
+    done = pyqtSignal(str, str)
+    failed = pyqtSignal(str, str)
+
+
+class LyricsJob(QRunnable):
+    """Off-thread lyrics fetch job."""
+
+    def __init__(self, catalog: CatalogSource, video_id: str) -> None:
+        super().__init__()
+        self.catalog = catalog
+        self.video_id = video_id
+        self.signals = LyricsSignals()
+        self.setAutoDelete(True)
+
+    def run(self) -> None:
+        try:
+            text = self.catalog.lyrics(self.video_id)
+            if text:
+                self.signals.done.emit(self.video_id, text)
+            else:
+                self.signals.failed.emit(self.video_id, "No lyrics found for this track")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("lyrics job failed for %s: %s", self.video_id, exc)
+            self.signals.failed.emit(self.video_id, str(exc))
