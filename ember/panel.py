@@ -613,14 +613,14 @@ class QueueRow(QFrame):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(Palette.amber_lo))
             painter.setOpacity(0.18)
-            painter.drawRoundedRect(QRectF(0, 1, self.width(), self.height() - 2), 10, 10)
+            painter.drawRoundedRect(QRectF(0, 1, self.width(), self.height() - 2), 14, 14)
             painter.setOpacity(1.0)
             painter.setBrush(QColor(Palette.amber))
             painter.drawRoundedRect(QRectF(3, 9, 2.5, self.height() - 18), 1.25, 1.25)
         elif self._hover:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(244, 233, 221, 14))
-            painter.drawRoundedRect(QRectF(0, 1, self.width(), self.height() - 2), 10, 10)
+            painter.drawRoundedRect(QRectF(0, 1, self.width(), self.height() - 2), 14, 14)
         painter.end()
 
 
@@ -818,6 +818,7 @@ class FloatingPanel(QWidget):
 
         self.status = QLabel("ready", self)
         self.status.setObjectName("StatusChip")
+        self.status.setFixedHeight(22)
         row.addWidget(self.status, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.collapse_pill = self._pill_btn(28)
@@ -964,7 +965,7 @@ class FloatingPanel(QWidget):
         self.find = QPushButton(self)
         self.find.setObjectName("AmberButton")
         self.find.setFixedHeight(36)
-        self.find.setFixedWidth(44)
+        self.find.setFixedWidth(36)
         self.find.setCursor(Qt.CursorShape.PointingHandCursor)
         self.find.setToolTip("search catalogue")
         row.addWidget(self.find)
@@ -1002,13 +1003,17 @@ class FloatingPanel(QWidget):
         self.tab_lyrics.setIconSize(QSize(12, 12))
         self.tab_lyrics.setToolTip("live song lyrics")
 
+        for tab_btn in (self.tab_queue, self.tab_favs, self.tab_history, self.tab_lyrics):
+            tab_btn.setFixedHeight(26)
+            tab_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
         row.addWidget(self.tab_queue)
         row.addWidget(self.tab_favs)
         row.addWidget(self.tab_history)
         row.addWidget(self.tab_lyrics)
         row.addStretch(1)
 
-        self.clear_btn = self._ghost_btn(24)
+        self.clear_btn = self._ghost_btn(26)
         self.clear_btn.setToolTip("clear current list")
         self.clear_btn.setIcon(trash_icon())
         self.clear_btn.setIconSize(QSize(12, 12))
@@ -1083,6 +1088,8 @@ class FloatingPanel(QWidget):
         self.endless.setObjectName("Chip")
         self.endless.setCheckable(True)
         self.endless.setChecked(True)
+        self.endless.setFixedHeight(26)
+        self.endless.setCursor(Qt.CursorShape.PointingHandCursor)
         self.endless.setIcon(infinity_icon())
         self.endless.setIconSize(QSize(13, 13))
         self.endless.setToolTip("keep adding look-alike tracks when queue runs dry")
@@ -1090,6 +1097,7 @@ class FloatingPanel(QWidget):
 
         self.speed_btn = QPushButton("1.0x", self)
         self.speed_btn.setObjectName("SpeedPill")
+        self.speed_btn.setFixedHeight(26)
         self.speed_btn.setToolTip("Playback speed (click to cycle)")
         self.speed_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.speed_btn.clicked.connect(self._cycle_speed)
@@ -1097,6 +1105,7 @@ class FloatingPanel(QWidget):
 
         self.sleep_btn = QPushButton(" Sleep", self)
         self.sleep_btn.setObjectName("SleepPill")
+        self.sleep_btn.setFixedHeight(26)
         self.sleep_btn.setCheckable(True)
         self.sleep_btn.setIcon(moon_icon(False))
         self.sleep_btn.setIconSize(QSize(12, 12))
@@ -1145,6 +1154,8 @@ class FloatingPanel(QWidget):
         btn = QPushButton(self)
         btn.setObjectName("Ghost")
         btn.setFixedSize(side, side)
+        r = side // 2
+        btn.setStyleSheet(f"#Ghost {{ border-radius: {r}px; }} #Ghost:hover {{ border-radius: {r}px; }} #Ghost:pressed {{ border-radius: {r}px; }}")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         return btn
 
@@ -1152,6 +1163,8 @@ class FloatingPanel(QWidget):
         btn = QPushButton(self)
         btn.setObjectName("Pill")
         btn.setFixedSize(side, side)
+        r = side // 2
+        btn.setStyleSheet(f"#Pill {{ border-radius: {r}px; }} #Pill:hover {{ border-radius: {r}px; }}")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         return btn
 

@@ -47,7 +47,7 @@ QWidget {
     background: qlineargradient(x1:0, y1:0, x2:0.9, y2:1,
                 stop:0 $shell_a, stop:0.55 $void, stop:1 $shell_b);
     border: 1px solid rgba($text_rgb, 0.12);
-    border-radius: 24px;
+    border-radius: 26px;
 }
 #Ribbon, #Panel { background: transparent; }
 
@@ -83,7 +83,7 @@ QWidget {
     background: rgba($amber_rgb, 0.14);
     border: 1px solid rgba($amber_rgb, 0.32);
     border-radius: 11px;
-    padding: 3px 10px;
+    padding: 2px 10px;
 }
 
 /* ------------------------------------------------------------------ cards */
@@ -92,7 +92,7 @@ QWidget {
                 stop:0 rgba($text_rgb, 0.05),
                 stop:1 rgba($text_rgb, 0.02));
     border: 1px solid rgba($text_rgb, 0.08);
-    border-radius: 20px;
+    border-radius: 22px;
 }
 
 /* ----------------------------------------------------------------- inputs */
@@ -108,6 +108,7 @@ QWidget {
 }
 #SearchField:focus {
     border: 1px solid $amber;
+    border-radius: 18px;
     background: $raised;
 }
 
@@ -118,14 +119,22 @@ QWidget {
     font-weight: 700;
     font-size: 11px;
     border: none;
-    border-radius: 14px;
+    border-radius: 18px;
     padding: 0 16px;
 }
 #AmberButton:hover {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFF, stop:1 $amber_hi);
+    border-radius: 18px;
 }
-#AmberButton:pressed { background: $amber_lo; }
-#AmberButton:disabled { background: $raised; color: $faint; }
+#AmberButton:pressed {
+    background: $amber_lo;
+    border-radius: 18px;
+}
+#AmberButton:disabled {
+    background: $raised;
+    color: $faint;
+    border-radius: 18px;
+}
 
 #RoundPlay {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $amber_hi, stop:1 $amber);
@@ -138,36 +147,55 @@ QWidget {
 }
 #RoundPlay:hover {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 $amber_hi);
+    border-radius: 21px;
 }
-#RoundPlay:pressed { background: $amber_lo; }
+#RoundPlay:pressed {
+    background: $amber_lo;
+    border-radius: 21px;
+}
 
 #Ghost {
     background: transparent;
     border: none;
-    border-radius: 15px;
+    border-radius: 14px;
 }
-#Ghost:hover { background: rgba($text_rgb, 0.10); }
-#Ghost:pressed { background: rgba($text_rgb, 0.16); }
+#Ghost:hover {
+    background: rgba($text_rgb, 0.10);
+    border-radius: 14px;
+}
+#Ghost:pressed {
+    background: rgba($text_rgb, 0.16);
+    border-radius: 14px;
+}
 
 #Pill {
     background: rgba($text_rgb, 0.05);
     border: 1px solid rgba($text_rgb, 0.06);
-    border-radius: 13px;
+    border-radius: 14px;
 }
-#Pill:hover { background: rgba($text_rgb, 0.14); }
+#Pill:hover {
+    background: rgba($text_rgb, 0.14);
+    border-radius: 14px;
+}
 #PillClose {
     background: rgba($text_rgb, 0.05);
     border: 1px solid rgba($text_rgb, 0.06);
-    border-radius: 13px;
+    border-radius: 14px;
 }
-#PillClose:hover { background: rgba($clay_rgb, 0.35); }
+#PillClose:hover {
+    background: rgba($clay_rgb, 0.35);
+    border-radius: 14px;
+}
 
 #HeartButton {
     background: transparent;
     border: none;
-    border-radius: 13px;
+    border-radius: 11px;
 }
-#HeartButton:hover { background: rgba($clay_rgb, 0.16); }
+#HeartButton:hover {
+    background: rgba($clay_rgb, 0.16);
+    border-radius: 11px;
+}
 
 #Chip {
     background: rgba($text_rgb, 0.04);
@@ -176,12 +204,18 @@ QWidget {
     color: $muted;
     font-size: 10px;
     font-weight: 600;
-    padding: 3px 10px;
+    padding: 2px 10px;
 }
-#Chip:hover { color: $text; border: 1px solid $faint; background: rgba($text_rgb, 0.08); }
+#Chip:hover {
+    color: $text;
+    border: 1px solid $faint;
+    border-radius: 13px;
+    background: rgba($text_rgb, 0.08);
+}
 #Chip:checked {
     background: rgba($amber_rgb, 0.18);
     border: 1px solid rgba($amber_rgb, 0.45);
+    border-radius: 13px;
     color: $amber_hi;
 }
 
@@ -191,13 +225,18 @@ QWidget {
     border-radius: 13px;
     color: $muted;
     font-size: 10px;
-    padding: 4px 10px;
+    padding: 2px 10px;
     font-weight: 600;
 }
-#TabButton:hover { color: $text; background: rgba($text_rgb, 0.08); }
+#TabButton:hover {
+    color: $text;
+    background: rgba($text_rgb, 0.08);
+    border-radius: 13px;
+}
 #TabButton:checked {
     background: rgba($amber_rgb, 0.18);
     border: 1px solid rgba($amber_rgb, 0.38);
+    border-radius: 13px;
     color: $amber_hi;
     font-weight: 700;
 }
@@ -215,12 +254,16 @@ QWidget {
 #ModeToggle {
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 14px;
+    border-radius: 15px;
 }
-#ModeToggle:hover { background: rgba($text_rgb, 0.10); }
+#ModeToggle:hover {
+    background: rgba($text_rgb, 0.10);
+    border-radius: 15px;
+}
 #ModeToggle:checked {
     background: rgba($amber_rgb, 0.18);
     border: 1px solid rgba($amber_rgb, 0.40);
+    border-radius: 15px;
 }
 
 #SleepPill {
@@ -230,12 +273,18 @@ QWidget {
     color: $muted;
     font-size: 10px;
     font-weight: 600;
-    padding: 3px 8px;
+    padding: 2px 8px;
 }
-#SleepPill:hover { color: $text; border: 1px solid $faint; background: rgba($text_rgb, 0.08); }
+#SleepPill:hover {
+    color: $text;
+    border: 1px solid $faint;
+    border-radius: 13px;
+    background: rgba($text_rgb, 0.08);
+}
 #SleepPill:checked {
     background: rgba($amber_rgb, 0.18);
     border: 1px solid rgba($amber_rgb, 0.45);
+    border-radius: 13px;
     color: $amber_hi;
 }
 
@@ -246,9 +295,14 @@ QWidget {
     color: $muted;
     font-size: 10px;
     font-weight: 700;
-    padding: 3px 8px;
+    padding: 2px 8px;
 }
-#SpeedPill:hover { color: $text; border: 1px solid $faint; background: rgba($text_rgb, 0.08); }
+#SpeedPill:hover {
+    color: $text;
+    border: 1px solid $faint;
+    border-radius: 13px;
+    background: rgba($text_rgb, 0.08);
+}
 
 /* ------------------------------------------------------------------ queue */
 #QueueScroll { background: transparent; border: none; }
@@ -266,12 +320,12 @@ _MENU = Template(
 QMenu {
     background: $surface;
     border: 1px solid $line;
-    border-radius: 14px;
+    border-radius: 16px;
     padding: 6px;
 }
 QMenu::item {
     padding: 8px 22px 8px 14px;
-    border-radius: 8px;
+    border-radius: 10px;
     color: $text;
     font-size: 12px;
 }
@@ -282,7 +336,7 @@ QToolTip {
     background: $surface;
     color: $text;
     border: 1px solid $line;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 5px 9px;
     font-size: 11px;
 }
@@ -303,7 +357,7 @@ QDialog {
     background: qlineargradient(x1:0, y1:0, x2:0.9, y2:1,
                 stop:0 $shell_a, stop:0.55 $void, stop:1 $shell_b);
     border: 1px solid rgba($text_rgb, 0.14);
-    border-radius: 22px;
+    border-radius: 26px;
 }
 #SettingsScroll { background: transparent; border: none; }
 #SettingsScroll > QWidget > QWidget { background: transparent; }
@@ -336,23 +390,28 @@ QLabel { color: $text; font-size: 12px; }
 #SettingsSub { color: $faint; font-size: 11px; font-weight: 400; }
 #SettingsSection { color: $amber; font-size: 11px; font-weight: 700; }
 QCheckBox { color: $text; font-size: 12px; spacing: 8px; }
-QCheckBox::indicator { width: 18px; height: 18px; border: 1px solid $line; border-radius: 6px; background: $raised; }
-QCheckBox::indicator:checked { background: $amber; border: 1px solid $amber_hi; }
+QCheckBox::indicator { width: 18px; height: 18px; border: 1px solid $line; border-radius: 9px; background: $raised; }
+QCheckBox::indicator:checked { background: $amber; border: 1px solid $amber_hi; border-radius: 9px; }
 QComboBox {
     background: $raised;
     color: $text;
     border: 1px solid $line;
-    border-radius: 12px;
+    border-radius: 14px;
     padding: 6px 14px;
     font-size: 12px;
     font-weight: 600;
+}
+QComboBox::drop-down {
+    border: none;
+    width: 24px;
 }
 QComboBox QAbstractItemView {
     background: $surface;
     color: $text;
     selection-background-color: $raised;
     border: 1px solid $line;
-    border-radius: 10px;
+    border-radius: 14px;
+    padding: 4px;
 }
 QSlider::groove:horizontal {
     height: 5px;
@@ -379,8 +438,8 @@ QSlider::handle:horizontal:hover {
 #CreditsCard {
     background: rgba($text_rgb, 0.03);
     border: 1px solid rgba($text_rgb, 0.08);
-    border-radius: 14px;
-    padding: 8px 12px;
+    border-radius: 18px;
+    padding: 10px 14px;
 }
 #CreditName {
     font-size: 12px;
@@ -396,7 +455,7 @@ QSlider::handle:horizontal:hover {
     color: $amber_hi;
     font-size: 9px;
     font-weight: 700;
-    border-radius: 7px;
+    border-radius: 9px;
     padding: 2px 7px;
 }
 #CreditBadgeOg {
@@ -404,7 +463,7 @@ QSlider::handle:horizontal:hover {
     color: $clay;
     font-size: 9px;
     font-weight: 700;
-    border-radius: 7px;
+    border-radius: 9px;
     padding: 2px 7px;
 }
 
@@ -412,7 +471,7 @@ QSlider::handle:horizontal:hover {
 #SearchField {
     background: $raised;
     border: 1px solid $line;
-    border-radius: 12px;
+    border-radius: 13px;
     padding: 5px 12px;
     color: $text;
     font-size: 11px;
@@ -420,13 +479,14 @@ QSlider::handle:horizontal:hover {
 }
 #SearchField:focus {
     border: 1px solid $amber;
+    border-radius: 13px;
     background: $surface;
 }
 
 #Pill {
     background: rgba($text_rgb, 0.04);
     border: 1px solid $line;
-    border-radius: 12px;
+    border-radius: 14px;
     color: $muted;
     font-size: 11px;
     font-weight: 600;
@@ -435,6 +495,7 @@ QSlider::handle:horizontal:hover {
 #Pill:hover {
     color: $text;
     border: 1px solid $faint;
+    border-radius: 14px;
     background: rgba($text_rgb, 0.08);
 }
 
@@ -444,11 +505,12 @@ QSlider::handle:horizontal:hover {
     font-weight: 700;
     font-size: 11px;
     border: none;
-    border-radius: 13px;
+    border-radius: 14px;
     padding: 4px 14px;
 }
 #AmberButton:hover {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 $amber_hi, stop:1 #FFFFFF);
+    border-radius: 14px;
 }
 
 #PillClose {
@@ -459,6 +521,7 @@ QSlider::handle:horizontal:hover {
 #PillClose:hover {
     background: rgba($clay_rgb, 0.25);
     border: 1px solid $clay;
+    border-radius: 13px;
 }
 """
 )
@@ -468,7 +531,7 @@ _TOAST = Template(
 #ToastShell {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 $shell_a, stop:1 $void);
     border: 1px solid rgba($text_rgb, 0.16);
-    border-radius: 16px;
+    border-radius: 20px;
 }
 #ToastTitle { color: $text; font-size: 12px; font-weight: 700; }
 #ToastArtist { color: $muted; font-size: 11px; }
