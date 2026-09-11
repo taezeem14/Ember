@@ -45,6 +45,7 @@ class PlaybackCore(QObject):
     notice = pyqtSignal(str)                 # short human line for the status chip
     repeat_mode_changed = pyqtSignal(str)    # 'off', 'all', 'one'
     rate_changed = pyqtSignal(float)         # playback rate factor (1.0, 1.25, etc.)
+    mute_changed = pyqtSignal(bool)          # True if muted
 
     def __init__(
         self,
@@ -77,6 +78,8 @@ class PlaybackCore(QObject):
         self.auto_queue = True
         self.repeat_mode: str = "off"  # "off", "all", "one"
         self.playback_rate: float = 1.0
+        self._is_muted: bool = False
+        self._pre_mute_volume: Optional[int] = None
         self._fade_timer: Optional[QTimer] = None
         self._pre_fade_volume: Optional[int] = None
 
@@ -260,6 +263,71 @@ class PlaybackCore(QObject):
         self.queue_changed.emit(self.queue)
         self.notice.emit("upcoming queue shuffled")
 
+    def remove_at(self, index: int) -> Optional[Song]:
+        """Remove a track at index from the queue, adjusting cursor safely."""
+        if not 0 <= index < len(self.queue):
+            return None
+        removed = self.queue.pop(index)
+        if index < self.cursor:
+            self.cursor -= 1
+            self.queue_changed.emit(self.queue)
+            self.cursor_changed.emit(self.cursor)
+        elif index == self.cursor:
+            self.queue_changed.emit(self.queue)
+            if self.queue:
+                if self.cursor >= len(self.queue):
+                    self.cursor = len(self.queue) - 1
+                self.cursor_changed.emit(self.cursor)
+                self.play_at(self.cursor)
+            else:
+                self.player.stop()
+                self.cursor = -1
+                self.cursor_changed.emit(-1)
+                self.song_changed.emit(None)
+        else:
+            self.queue_changed.emit(self.queue)
+        self.notice.emit(f"removed {removed.title[:18]}")
+        return removed
+
+    def clear_queue(self) -> None:
+        """Clear the queue keeping only the currently playing track."""
+        if not self.queue:
+            return
+        if self.current is not None:
+            self.queue = [self.current]
+            self.cursor = 0
+        else:
+            self.queue = []
+            self.cursor = -1
+        self.queue_changed.emit(self.queue)
+        self.cursor_changed.emit(self.cursor)
+        self.notice.emit("queue cleared")
+
+    def move_track(self, from_idx: int, to_idx: int) -> bool:
+        """Reorder a track in the queue, updating cursor accurately."""
+        if not (0 <= from_idx < len(self.queue) and 0 <= to_idx < len(self.queue)):
+            return False
+        if from_idx == to_idx:
+            return True
+        track = self.queue.pop(from_idx)
+        self.queue.insert(to_idx, track)
+        if self.cursor == from_idx:
+            self.cursor = to_idx
+        elif from_idx < self.cursor <= to_idx:
+            self.cursor -= 1
+        elif to_idx <= self.cursor < from_idx:
+            self.cursor += 1
+        self.queue_changed.emit(self.queue)
+        self.cursor_changed.emit(self.cursor)
+        return True
+
+    def index_of(self, video_id: str) -> int:
+        """Return the index of a track by video ID in the queue, or -1."""
+        for i, song in enumerate(self.queue):
+            if song.video_id == video_id:
+                return i
+        return -1
+
     def set_playback_rate(self, rate: float) -> None:
         """Set playback rate factor (0.5x - 2.5x)."""
         rate = max(0.5, min(2.5, float(rate)))
@@ -342,6 +410,29 @@ class PlaybackCore(QObject):
         """Get current volume percentage."""
         return self._raw_volume
 
+    @property
+    def is_muted(self) -> bool:
+        """True if playback is currently muted."""
+        return self._is_muted
+
+    def toggle_mute(self) -> bool:
+        """Toggle mute state while preserving pre-mute volume."""
+        if self._is_muted:
+            self._is_muted = False
+            restore = self._pre_mute_volume if self._pre_mute_volume is not None else DEFAULT_VOLUME
+            self._pre_mute_volume = None
+            self.set_volume(restore)
+            self.mute_changed.emit(False)
+            self.notice.emit(f"unmuted ({restore}%)")
+            return False
+        else:
+            self._is_muted = True
+            self._pre_mute_volume = self._raw_volume
+            self.set_volume(0)
+            self.mute_changed.emit(True)
+            self.notice.emit("muted")
+            return True
+
     def set_normalize_volume(self, enabled: bool) -> None:
         """Toggle volume normalization to prevent loud track spikes."""
         self._normalize_volume = bool(enabled)
@@ -397,12 +488,21 @@ class PlaybackCore(QObject):
             return
         self._switching = False
         self.loading_changed.emit(False)
-        self.notice.emit("skipping unavailable track")
-        log.warning("playback aborted for %s: %s", song.video_id, message)
+        self._error_streak += 1
+        log.warning(
+            "playback aborted for %s: %s (error streak: %d)",
+            song.video_id,
+            message,
+            self._error_streak,
+        )
 
-        # Auto-recover by advancing to the next available track
-        if self.cursor + 1 < len(self.queue):
+        # Auto-recover by advancing to next track if within consecutive error cap
+        if self._error_streak <= MAX_AUTO_SKIP and self.cursor + 1 < len(self.queue):
+            self.notice.emit("skipping unavailable track")
             self.forward()
+        else:
+            self._error_streak = 0
+            self.notice.emit("playback hiccup — check connection")
 
     def _on_radio_ready(self, seed_id: str, songs: list) -> None:
         self._extending = False
@@ -425,9 +525,10 @@ class PlaybackCore(QObject):
                 trim = self.cursor - 5
                 self.queue = self.queue[trim:]
                 self.cursor -= trim
+                self.queue_changed.emit(self.queue)
                 self.cursor_changed.emit(self.cursor)
-
-            self.queue_changed.emit(self.queue)
+            else:
+                self.queue_changed.emit(self.queue)
 
         if self._advance_after_extend:
             self._advance_after_extend = False

@@ -155,3 +155,33 @@ def moon_icon(active: bool = False) -> QIcon:
 
 def gauge_icon(color: Optional[str] = None) -> QIcon:
     return get_icon("fa6s.gauge-high", color=color or Palette.muted, scale_factor=0.85)
+
+
+def trash_icon(color: Optional[str] = None) -> QIcon:
+    return get_icon("fa6s.trash-can", color=color or Palette.muted, color_active=Palette.clay, scale_factor=0.8)
+
+
+def pin_icon(active: bool = False) -> QIcon:
+    return get_icon(
+        "fa6s.thumbtack",
+        color=Palette.amber_hi if active else Palette.muted,
+        color_active=Palette.amber_hi,
+        scale_factor=0.85,
+    )
+
+
+def copy_icon(color: Optional[str] = None) -> QIcon:
+    return get_icon("fa6s.copy", color=color or Palette.muted, color_active=Palette.text, scale_factor=0.8)
+
+
+def browser_icon(color: Optional[str] = None) -> QIcon:
+    return get_icon("fa6s.arrow-up-right-from-square", color=color or Palette.muted, color_active=Palette.text, scale_factor=0.8)
+
+
+def volume_mute_icon(color: Optional[str] = None) -> QIcon:
+    return get_icon("fa6s.volume-xmark", color=color or Palette.clay, scale_factor=0.85)
+
+
+def volume_high_icon(color: Optional[str] = None) -> QIcon:
+    return get_icon("fa6s.volume-high", color=color or Palette.amber, scale_factor=0.85)
+

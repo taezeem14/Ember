@@ -50,6 +50,7 @@ SETTINGS_HOTKEYS = "ui/hotkeys"
 SETTINGS_OPACITY = "ui/opacity"
 SETTINGS_REPEAT = "playback/repeat"
 SETTINGS_SPEED = "playback/speed"
+SETTINGS_ALWAYS_ON_TOP = "ui/always_on_top"
 DEFAULT_OPACITY = 96
 
 

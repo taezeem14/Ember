@@ -174,6 +174,16 @@ class EmberStorage:
             log.error("Failed to load favorites: %s", exc)
         return songs
 
+    def get_favorite_ids(self) -> set[str]:
+        """Fetch set of all favorited video IDs in a single batch query."""
+        try:
+            with self._connection() as conn:
+                cursor = conn.execute("SELECT video_id FROM favorites;")
+                return {str(row[0]) for row in cursor.fetchall()}
+        except Exception as exc:
+            log.error("Failed to fetch favorite IDs: %s", exc)
+            return set()
+
     # ------------------------------------------------------------------ history
     def record_history(self, song: Song) -> None:
         """Record a played track into history, pruning old entries past 300 items."""
@@ -246,3 +256,55 @@ class EmberStorage:
             log.info("Playback history cleared")
         except Exception as exc:
             log.error("Failed to clear history: %s", exc)
+
+    def remove_history(self, video_id: str) -> bool:
+        """Remove an individual track from playback history."""
+        try:
+            with self._connection() as conn:
+                conn.execute("DELETE FROM history WHERE video_id = ?;", (video_id,))
+                conn.commit()
+            return True
+        except Exception as exc:
+            log.error("Failed to remove history for %s: %s", video_id, exc)
+            return False
+
+    # ------------------------------------------------------------- export & import
+    def export_favorites_json(self) -> str:
+        """Export all favorites as formatted JSON."""
+        import json
+        favs = [s.to_dict() for s in self.get_favorites()]
+        return json.dumps(favs, indent=2)
+
+    def import_favorites_json(self, json_data: str) -> int:
+        """Import favorites from JSON string, returning count of songs imported."""
+        import json
+        try:
+            items = json.loads(json_data)
+            if not isinstance(items, list):
+                return 0
+            count = 0
+            for item in items:
+                if isinstance(item, dict) and item.get("video_id"):
+                    self.add_favorite(Song.from_dict(item))
+                    count += 1
+            return count
+        except Exception as exc:
+            log.error("Failed to import favorites JSON: %s", exc)
+            return 0
+
+    def export_favorites_m3u(self) -> str:
+        """Export favorites in standard extended M3U8 playlist format."""
+        favs = self.get_favorites()
+        lines = ["#EXTM3U"]
+        for s in favs:
+            dur = -1
+            if s.duration and ":" in s.duration:
+                parts = s.duration.split(":")
+                try:
+                    dur = int(parts[0]) * 60 + int(parts[1])
+                except ValueError:
+                    dur = -1
+            lines.append(f"#EXTINF:{dur},{s.artist} - {s.title}")
+            lines.append(f"https://www.youtube.com/watch?v={s.video_id}")
+        return "\n".join(lines) + "\n"
+

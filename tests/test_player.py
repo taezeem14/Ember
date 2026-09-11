@@ -207,3 +207,135 @@ def test_playback_core_is_playing_pause_resume() -> None:
     core.resume()
     core.player.play.assert_called_once()
 
+
+def test_playback_core_mute_toggle() -> None:
+    core = _create_core()
+    core.set_volume(75)
+    assert not core.is_muted
+    assert core.volume() == 75
+
+    # Toggle to muted
+    muted = core.toggle_mute()
+    assert muted
+    assert core.is_muted
+    assert core.volume() == 0
+
+    # Toggle to unmuted (restores volume)
+    muted = core.toggle_mute()
+    assert not muted
+    assert not core.is_muted
+    assert core.volume() == 75
+
+
+def test_playback_core_remove_at() -> None:
+    core = _create_core()
+    s1 = Song(video_id="s1", title="Song 1", artist="Artist")
+    s2 = Song(video_id="s2", title="Song 2", artist="Artist")
+    s3 = Song(video_id="s3", title="Song 3", artist="Artist")
+    core.queue = [s1, s2, s3]
+    core.cursor = 1
+
+    # Remove song after cursor: cursor unchanged
+    removed = core.remove_at(2)
+    assert removed == s3
+    assert len(core.queue) == 2
+    assert core.cursor == 1
+
+    # Remove song before cursor: cursor decrements
+    core.queue = [s1, s2, s3]
+    core.cursor = 1
+    removed = core.remove_at(0)
+    assert removed == s1
+    assert len(core.queue) == 2
+    assert core.cursor == 0
+    assert core.queue[0] == s2
+
+    # Remove current playing song: plays new track at cursor
+    core.play_at = MagicMock()
+    removed = core.remove_at(0)
+    assert removed == s2
+    assert len(core.queue) == 1
+    core.play_at.assert_called_once_with(0)
+
+    # Out of range remove returns None
+    assert core.remove_at(99) is None
+
+
+def test_playback_core_clear_queue() -> None:
+    core = _create_core()
+    s1 = Song(video_id="s1", title="Song 1", artist="Artist")
+    s2 = Song(video_id="s2", title="Song 2", artist="Artist")
+    core.queue = [s1, s2]
+    core.cursor = 0
+
+    core.clear_queue()
+    # Retains current track
+    assert len(core.queue) == 1
+    assert core.queue[0] == s1
+    assert core.cursor == 0
+
+    # If nothing is playing, queue empties completely
+    core.cursor = -1
+    core.clear_queue()
+    assert len(core.queue) == 0
+    assert core.cursor == -1
+
+
+def test_playback_core_move_track() -> None:
+    core = _create_core()
+    s1 = Song(video_id="s1", title="Song 1", artist="Artist")
+    s2 = Song(video_id="s2", title="Song 2", artist="Artist")
+    s3 = Song(video_id="s3", title="Song 3", artist="Artist")
+    core.queue = [s1, s2, s3]
+    core.cursor = 0
+
+    # Moving current track updates cursor
+    assert core.move_track(0, 2)
+    assert core.queue == [s2, s3, s1]
+    assert core.cursor == 2
+
+    # Moving upcoming track backwards past cursor updates cursor
+    assert core.move_track(2, 0)
+    assert core.queue == [s1, s2, s3]
+    assert core.cursor == 0
+
+    # Invalid indices return False
+    assert not core.move_track(-1, 2)
+    assert not core.move_track(0, 10)
+
+
+def test_playback_core_index_of() -> None:
+    core = _create_core()
+    s1 = Song(video_id="v1", title="Song 1", artist="Artist")
+    s2 = Song(video_id="v2", title="Song 2", artist="Artist")
+    core.queue = [s1, s2]
+
+    assert core.index_of("v1") == 0
+    assert core.index_of("v2") == 1
+    assert core.index_of("nonexistent") == -1
+
+
+def test_playback_core_error_streak_cap() -> None:
+    from ember.player import MAX_AUTO_SKIP
+    core = _create_core()
+    s1 = Song(video_id="err1", title="Error 1", artist="Artist")
+    s2 = Song(video_id="err2", title="Error 2", artist="Artist")
+    core.queue = [s1, s2]
+    core.cursor = 0
+    core.forward = MagicMock()
+
+    # Under streak limit, forward is triggered
+    core._wanted = "err1"
+    core._error_streak = 0
+    core._on_stream_failed(s1, "HTTP 403")
+    assert core._error_streak == 1
+    core.forward.assert_called_once()
+
+    # Exceeding streak limit halts auto-forward loop
+    core.forward.reset_mock()
+    core._wanted = "err2"
+    core._error_streak = MAX_AUTO_SKIP + 1
+    core._on_stream_failed(s2, "HTTP 403")
+    core.forward.assert_not_called()
+    assert core._error_streak == 0
+

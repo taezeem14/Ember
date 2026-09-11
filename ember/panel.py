@@ -14,9 +14,11 @@ import logging
 import sys
 from typing import Callable, Dict, List, Optional, Tuple
 
-from PyQt6.QtCore import QPoint, QRectF, QSettings, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QPoint, QRectF, QSettings, QSize, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
+    QDesktopServices,
+    QGuiApplication,
     QLinearGradient,
     QPainter,
     QPainterPath,
@@ -24,6 +26,8 @@ from PyQt6.QtGui import (
     QPixmap,
 )
 from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
@@ -50,6 +54,7 @@ from .config import (
     Palette,
     QUEUE_VIEW_HEIGHT,
     SEARCH_DEBOUNCE_MS,
+    SETTINGS_ALWAYS_ON_TOP,
     SETTINGS_AUTO_QUEUE,
     SETTINGS_HOTKEYS,
     SETTINGS_NORMALIZE_VOLUME,
@@ -62,8 +67,10 @@ from .config import (
 )
 from .icons import (
     backward_icon,
+    browser_icon,
     close_icon,
     collapse_icon,
+    copy_icon,
     expand_icon,
     fire_icon,
     forward_icon,
@@ -74,12 +81,16 @@ from .icons import (
     moon_icon,
     music_icon,
     pause_icon,
+    pin_icon,
     play_icon,
     queue_icon,
     repeat_icon,
     search_icon,
     settings_icon,
     shuffle_icon,
+    trash_icon,
+    volume_high_icon,
+    volume_mute_icon,
 )
 from .jobs import ArtJob, LyricsJob, SearchJob
 from .models import Song
@@ -93,6 +104,7 @@ from .utils import clock, elide_into, looks_like_link, pretty_count
 log = logging.getLogger(__name__)
 
 HWND_TOPMOST = -1
+HWND_NOTOPMOST = -2
 SWP_NOSIZE = 0x0001
 SWP_NOMOVE = 0x0002
 SWP_NOACTIVATE = 0x0010
@@ -362,6 +374,7 @@ class VolumeDial(QWidget):
     """Vertical-drag dial. Cozy alternative to a flat volume slider."""
 
     changed = pyqtSignal(int)
+    mute_toggled = pyqtSignal()
 
     def __init__(self, value: int, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -369,8 +382,10 @@ class VolumeDial(QWidget):
         self.setCursor(Qt.CursorShape.SizeVerCursor)
         self._value = max(0, min(100, int(value)))
         self._drag_origin: Optional[QPoint] = None
+        self._press_pos: Optional[QPoint] = None
         self._drag_value = self._value
-        self.setToolTip(f"volume {self._value}%")
+        self._is_muted = False
+        self.setToolTip(f"volume {self._value}% (click/right-click to mute)")
 
     def value(self) -> int:
         return self._value
@@ -379,13 +394,23 @@ class VolumeDial(QWidget):
         clamped = max(0, min(100, int(value)))
         if clamped != self._value:
             self._value = clamped
-            self.setToolTip(f"volume {clamped}%")
+            tip = "muted" if self._is_muted else f"volume {clamped}%"
+            self.setToolTip(tip)
             self.update()
+
+    def set_muted(self, muted: bool) -> None:
+        self._is_muted = bool(muted)
+        tip = "muted" if self._is_muted else f"volume {self._value}%"
+        self.setToolTip(tip)
+        self.update()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_origin = event.globalPosition().toPoint()
+            self._press_pos = event.globalPosition().toPoint()
+            self._drag_origin = self._press_pos
             self._drag_value = self._value
+        elif event.button() == Qt.MouseButton.RightButton:
+            self.mute_toggled.emit()
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         if self._drag_origin is None:
@@ -399,7 +424,15 @@ class VolumeDial(QWidget):
             self.update()
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
-        self._drag_origin = None
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self._press_pos and (event.globalPosition().toPoint() - self._press_pos).manhattanLength() < 4:
+                self.mute_toggled.emit()
+            self._drag_origin = None
+            self._press_pos = None
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.mute_toggled.emit()
 
     def wheelEvent(self, event) -> None:  # noqa: N802
         delta = event.angleDelta().y()
@@ -423,12 +456,17 @@ class VolumeDial(QWidget):
         painter.drawArc(ring, 0, 360 * 16)
 
         span = int(-self._value / 100.0 * 360 * 16)
-        painter.setPen(QPen(QColor(Palette.amber), 2.5))
+        painter.setPen(QPen(QColor(Palette.clay if self._is_muted else Palette.amber), 2.5))
         painter.drawArc(ring, 90 * 16, span)
 
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(Palette.text))
+        painter.setBrush(QColor(Palette.clay if self._is_muted else Palette.text))
         painter.drawEllipse(QRectF(12.0, 12.0, 6.0, 6.0))
+
+        if self._is_muted:
+            painter.setPen(QPen(QColor(Palette.clay), 1.8))
+            painter.drawLine(9, 9, 21, 21)
+
         painter.end()
 
 
@@ -437,6 +475,7 @@ class QueueRow(QFrame):
 
     picked = pyqtSignal(int)
     fav_toggled = pyqtSignal(int)
+    remove_requested = pyqtSignal(int)
 
     def __init__(
         self,
@@ -513,6 +552,43 @@ class QueueRow(QFrame):
         ):
             self.picked.emit(self.index)
 
+    def contextMenuEvent(self, event) -> None:  # noqa: N802
+        menu = QMenu(self)
+
+        play_act = menu.addAction("Play Now")
+        play_act.setIcon(play_icon(Palette.text))
+        play_act.triggered.connect(lambda: self.picked.emit(self.index))
+
+        fav_text = "Remove from Favorites" if self.is_fav else "Add to Favorites"
+        fav_act = menu.addAction(fav_text)
+        fav_act.setIcon(heart_icon(self.is_fav))
+        fav_act.triggered.connect(lambda: self.fav_toggled.emit(self.index))
+
+        menu.addSeparator()
+
+        remove_act = menu.addAction("Remove from List")
+        remove_act.setIcon(trash_icon(Palette.text))
+        remove_act.triggered.connect(lambda: self.remove_requested.emit(self.index))
+
+        menu.addSeparator()
+
+        copy_info_act = menu.addAction("Copy Song Info")
+        copy_info_act.setIcon(copy_icon(Palette.text))
+        copy_info_act.triggered.connect(
+            lambda: QGuiApplication.clipboard().setText(f"{self.song.title} — {self.song.byline}")
+        )
+
+        copy_link_act = menu.addAction("Copy YouTube Link")
+        copy_link_act.setIcon(copy_icon(Palette.text))
+        yt_url = f"https://www.youtube.com/watch?v={self.song.video_id}"
+        copy_link_act.triggered.connect(lambda: QGuiApplication.clipboard().setText(yt_url))
+
+        open_act = menu.addAction("Open in Browser")
+        open_act.setIcon(browser_icon(Palette.text))
+        open_act.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(yt_url)))
+
+        menu.exec(event.globalPos())
+
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -571,12 +647,16 @@ class FloatingPanel(QWidget):
         self._sleep_timer.setInterval(1000)
         self._sleep_timer.timeout.connect(self._on_sleep_tick)
 
+        self._show_remaining_time: bool = False
+        self.setAcceptDrops(True)
+
         self.setWindowTitle(APP_NAME)
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
-        )
+        ontop_val = str(self.settings.value(SETTINGS_ALWAYS_ON_TOP, "true")).lower() in ("true", "1", "yes")
+        self.always_on_top = ontop_val
+        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
+        if self.always_on_top:
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setStyleSheet(panel_stylesheet())
 
@@ -769,7 +849,10 @@ class FloatingPanel(QWidget):
 
         self.elapsed = QLabel("0:00", card)
         self.elapsed.setObjectName("Clock")
-        self.elapsed.setFixedWidth(38)
+        self.elapsed.setFixedWidth(44)
+        self.elapsed.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.elapsed.setToolTip("click to toggle remaining time")
+        self.elapsed.mousePressEvent = lambda ev: self._toggle_remaining_time()
         seek_row.addWidget(self.elapsed)
 
         self.seek = SeekBar(card)
@@ -898,6 +981,13 @@ class FloatingPanel(QWidget):
         row.addWidget(self.tab_history)
         row.addWidget(self.tab_lyrics)
         row.addStretch(1)
+
+        self.clear_btn = self._ghost_btn(24)
+        self.clear_btn.setToolTip("clear current list")
+        self.clear_btn.setIcon(trash_icon())
+        self.clear_btn.setIconSize(QSize(12, 12))
+        self.clear_btn.clicked.connect(self._on_clear_tab)
+        row.addWidget(self.clear_btn)
 
         self.tab_queue.clicked.connect(lambda: self._switch_tab("queue"))
         self.tab_favs.clicked.connect(lambda: self._switch_tab("favorites"))
@@ -1068,6 +1158,9 @@ class FloatingPanel(QWidget):
         self.tab_lyrics.setIcon(lyrics_icon())
         self.tab_lyrics.setIconSize(QSize(12, 12))
 
+        self.clear_btn.setIcon(trash_icon())
+        self.clear_btn.setIconSize(QSize(12, 12))
+
         self.sleep_btn.setIcon(moon_icon(self._sleep_seconds_remaining > 0))
         self.sleep_btn.setIconSize(QSize(12, 12))
 
@@ -1127,6 +1220,8 @@ class FloatingPanel(QWidget):
         self.field.textChanged.connect(self._on_field_changed)
 
         self.volume.changed.connect(self._on_volume)
+        self.volume.mute_toggled.connect(self._toggle_mute)
+        core.mute_changed.connect(self.volume.set_muted)
         self.endless.toggled.connect(self._on_endless)
         self.quit.clicked.connect(self._on_quit)
 
@@ -1184,11 +1279,13 @@ class FloatingPanel(QWidget):
             return
 
         self._empty.setVisible(False)
+        fav_ids = self.storage.get_favorite_ids() if self.storage else set()
         for index, song in enumerate(songs):
-            is_fav = bool(self.storage and self.storage.is_favorite(song.video_id))
+            is_fav = song.video_id in fav_ids
             row = QueueRow(index, song, is_fav=is_fav, parent=self.queue_host)
             row.picked.connect(self._on_row_picked)
             row.fav_toggled.connect(self._on_row_fav_toggled)
+            row.remove_requested.connect(self._on_row_remove_requested)
             if index == active_idx:
                 row.set_active(True)
             self.queue_list.insertWidget(index + 1, row)
@@ -1203,6 +1300,31 @@ class FloatingPanel(QWidget):
             self.core.play_at(index)
         else:
             self.core.play(picked_song, expand=True)
+
+    def _on_row_remove_requested(self, index: int) -> None:
+        if not 0 <= index < len(self._view_songs):
+            return
+        target = self._view_songs[index]
+        if self._active_tab == "queue":
+            self.core.remove_at(index)
+        elif self._active_tab == "favorites" and self.storage:
+            self.storage.remove_favorite(target.video_id)
+            self._set_status(f"unpinned {target.title[:18]}")
+            self._refresh_tab_content()
+        elif self._active_tab == "history" and self.storage:
+            self.storage.remove_history(target.video_id)
+            self._set_status(f"removed {target.title[:18]} from history")
+            self._refresh_tab_content()
+
+    def _on_clear_tab(self) -> None:
+        if self._active_tab == "queue":
+            self.core.clear_queue()
+        elif self._active_tab == "history" and self.storage:
+            self.storage.clear_history()
+            self._set_status("history cleared")
+            self._refresh_tab_content()
+        elif self._active_tab == "favorites":
+            self._set_status("unpin tracks using right-click or ♡")
 
     def _on_row_fav_toggled(self, index: int) -> None:
         if not self.storage or not 0 <= index < len(self._view_songs):
@@ -1252,13 +1374,38 @@ class FloatingPanel(QWidget):
 
     # ------------------------------------------------------------- settings
     def _open_settings(self) -> None:
-        dlg = SettingsDialog(self.settings, self)
+        dlg = SettingsDialog(self.settings, self, storage=self.storage)
         dlg.theme_changed.connect(self.reload_theme)
         dlg.opacity_changed.connect(self.set_window_opacity_percent)
+        dlg.always_on_top_changed.connect(self.set_always_on_top)
         dlg.normalization_changed.connect(self.core.set_normalize_volume)
         dlg.endless_changed.connect(self._on_endless_from_settings)
         dlg.hotkeys_changed.connect(lambda _: self.hotkeys_updated.emit())
         dlg.exec()
+
+    def set_always_on_top(self, enabled: bool) -> None:
+        self.always_on_top = bool(enabled)
+        self.settings.setValue(SETTINGS_ALWAYS_ON_TOP, self.always_on_top)
+        self.settings.sync()
+        flags = self.windowFlags()
+        if self.always_on_top:
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        else:
+            flags &= ~Qt.WindowType.WindowStaysOnTopHint
+        self.setWindowFlags(flags)
+        self.show()
+        if sys.platform.startswith("win"):
+            try:
+                import ctypes
+                target = HWND_TOPMOST if self.always_on_top else HWND_NOTOPMOST
+                ctypes.windll.user32.SetWindowPos(
+                    int(self.winId()),
+                    target,
+                    0, 0, 0, 0,
+                    SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE,
+                )
+            except Exception as exc:
+                log.debug("failed to update window z-order: %s", exc)
 
     def set_window_opacity_percent(self, percent: int) -> None:
         opacity = max(60, min(100, int(percent))) / 100.0
@@ -1331,7 +1478,12 @@ class FloatingPanel(QWidget):
         """Re-assert z-order. Windows forgets after another window takes focus."""
         if not sys.platform.startswith("win"):
             return
+        if not getattr(self, "always_on_top", True):
+            return
         try:
+            # Don't steal z-order over active modal dialogs (e.g. SettingsDialog)
+            if any(isinstance(w, QDialog) and w.isVisible() for w in QApplication.topLevelWidgets()):
+                return
             import ctypes
 
             ctypes.windll.user32.SetWindowPos(
@@ -1360,6 +1512,33 @@ class FloatingPanel(QWidget):
         if self._drag_offset is not None:
             self._drag_offset = None
             self.clamp_to_screen()
+
+    # ------------------------------------------------------------ drag and drop
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if event.mimeData().hasUrls() or event.mimeData().hasText():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        text = ""
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                text = urls[0].toString().strip()
+        elif event.mimeData().hasText():
+            text = event.mimeData().text().strip()
+
+        if text:
+            event.acceptProposedAction()
+            if looks_like_link(text):
+                self._set_status("loading dropped link")
+                self.core.open_link(text)
+            else:
+                self.field.setText(text)
+                self._on_find()
+        else:
+            event.ignore()
 
     # ------------------------------------------------------------- art fetching
     def _request_art(self, song: Song) -> None:
@@ -1441,7 +1620,10 @@ class FloatingPanel(QWidget):
 
     def _on_queue(self, songs: List[Song]) -> None:
         if self._active_tab == "queue":
+            vbar = self.queue_scroll.verticalScrollBar()
+            scroll_pos = vbar.value()
             self._render_song_list(songs, active_idx=self.core.cursor, empty_hint="search for something warm")
+            vbar.setValue(scroll_pos)
 
     def _on_cursor(self, index: int) -> None:
         if self._active_tab == "queue":
@@ -1547,6 +1729,7 @@ class FloatingPanel(QWidget):
         # In last 15 seconds, initiate volume attenuation fade-out
         if self._sleep_seconds_remaining <= 15 and not self._sleep_fading:
             self._sleep_fading = True
+            self._sleep_timer.stop()
             self.core.fade_out_and_pause(15000, on_done=self._on_sleep_finished)
 
         if self._sleep_seconds_remaining <= 0:
@@ -1572,15 +1755,31 @@ class FloatingPanel(QWidget):
         self.sleep_btn.setIcon(moon_icon(False))
         self._set_status("goodnight 🌙")
 
+    def _toggle_remaining_time(self) -> None:
+        self._show_remaining_time = not self._show_remaining_time
+        self._update_elapsed_label(self.seek.value())
+
+    def _update_elapsed_label(self, position: int) -> None:
+        if self._show_remaining_time:
+            total = self.seek.maximum()
+            rem = max(0, total - position)
+            self.elapsed.setText(f"-{clock(rem)}")
+        else:
+            self.elapsed.setText(clock(position))
+
+    def _toggle_mute(self) -> None:
+        self.core.toggle_mute()
+
     def _on_progress(self, position: int) -> None:
         if self._scrubbing:
             return
         self.seek.setValue(position)
-        self.elapsed.setText(clock(position))
+        self._update_elapsed_label(position)
 
     def _on_length(self, duration: int) -> None:
         self.seek.setRange(0, max(0, duration))
         self.total.setText(clock(duration))
+        self._update_elapsed_label(self.seek.value())
 
     def _on_loading(self, loading: bool) -> None:
         if loading:
@@ -1596,7 +1795,7 @@ class FloatingPanel(QWidget):
 
     def _on_scrub(self, position: int) -> None:
         self._scrubbing = True
-        self.elapsed.setText(clock(position))
+        self._update_elapsed_label(position)
 
     def _on_scrub_done(self, position: int) -> None:
         self._scrubbing = False
@@ -1679,6 +1878,74 @@ class FloatingPanel(QWidget):
         self.move(x, y)
         self.clamp_to_screen()
 
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        key = event.key()
+        # If search field is focused, let normal input pass through
+        if self.field.hasFocus():
+            if key == Qt.Key.Key_Escape:
+                self.field.clearFocus()
+                if self.expanded:
+                    self.collapse()
+                return
+            super().keyPressEvent(event)
+            return
+
+        # Multimedia keyboard keys
+        if key in (Qt.Key.Key_MediaPlay, Qt.Key.Key_MediaPause, Qt.Key.Key_MediaTogglePlayPause):
+            self.core.toggle()
+            return
+        if key == Qt.Key.Key_MediaNext:
+            self.core.forward()
+            return
+        if key == Qt.Key.Key_MediaPrevious:
+            self.core.back()
+            return
+        if key == Qt.Key.Key_MediaStop:
+            self.core.toggle()
+            return
+        if key == Qt.Key.Key_VolumeMute:
+            self._toggle_mute()
+            return
+        if key == Qt.Key.Key_VolumeUp:
+            self.core.set_volume(min(100, self.core.volume + 5))
+            return
+        if key == Qt.Key.Key_VolumeDown:
+            self.core.set_volume(max(0, self.core.volume - 5))
+            return
+
+        # In-window keyboard shortcuts
+        if key == Qt.Key.Key_Space:
+            self.core.toggle()
+        elif key == Qt.Key.Key_Left:
+            self.core.seek(max(0, self.seek.value() - 5))
+        elif key == Qt.Key.Key_Right:
+            self.core.seek(min(self.seek.maximum(), self.seek.value() + 5))
+        elif key == Qt.Key.Key_Up:
+            self.core.set_volume(min(100, self.core.volume + 5))
+        elif key == Qt.Key.Key_Down:
+            self.core.set_volume(max(0, self.core.volume - 5))
+        elif key == Qt.Key.Key_M:
+            self._toggle_mute()
+        elif key == Qt.Key.Key_S:
+            self.core.toggle_shuffle()
+        elif key == Qt.Key.Key_R:
+            self.core.cycle_repeat_mode()
+        elif key == Qt.Key.Key_L:
+            if not self.expanded:
+                self.expand()
+            self._switch_tab("lyrics")
+        elif key == Qt.Key.Key_Q:
+            if not self.expanded:
+                self.expand()
+            self._switch_tab("queue")
+        elif key == Qt.Key.Key_F and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+            self._focus_field()
+        elif key == Qt.Key.Key_Escape:
+            if self.expanded:
+                self.collapse()
+        else:
+            super().keyPressEvent(event)
+
     def hotkeys(self) -> List[Tuple[str, Callable[[], None]]]:
         """User-configured (sequence, callback) pairs to register on the window."""
         cfg_toggle = str(self.settings.value(f"{SETTINGS_HOTKEYS}/toggle", DEFAULT_HOTKEYS["toggle"]))
@@ -1694,6 +1961,7 @@ class FloatingPanel(QWidget):
             ("Ctrl+Alt+Up", self.expand),
             ("Ctrl+Alt+Down", self.collapse),
             ("Ctrl+Alt+F", self._focus_field),
+            ("Ctrl+Alt+M", self._toggle_mute),
         ]
 
     def _focus_field(self) -> None:

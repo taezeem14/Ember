@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QFileDialog,
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
@@ -30,6 +31,7 @@ from PyQt6.QtWidgets import (
 from .config import (
     DEFAULT_OPACITY,
     Palette,
+    SETTINGS_ALWAYS_ON_TOP,
     SETTINGS_AUTO_QUEUE,
     SETTINGS_HOTKEYS,
     SETTINGS_NORMALIZE_VOLUME,
@@ -38,6 +40,7 @@ from .config import (
     SETTINGS_TOAST_ENABLED,
 )
 from .icons import close_icon, keyboard_icon, palette_icon, settings_icon, sliders_icon
+from .storage import EmberStorage
 from .theme import settings_stylesheet
 
 log = logging.getLogger(__name__)
@@ -68,14 +71,21 @@ class SettingsDialog(QDialog):
 
     theme_changed = pyqtSignal(str)
     opacity_changed = pyqtSignal(int)
+    always_on_top_changed = pyqtSignal(bool)
     normalization_changed = pyqtSignal(bool)
     endless_changed = pyqtSignal(bool)
     toast_changed = pyqtSignal(bool)
     hotkeys_changed = pyqtSignal(dict)
 
-    def __init__(self, settings: QSettings, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        settings: QSettings,
+        parent: Optional[QWidget] = None,
+        storage: Optional[EmberStorage] = None,
+    ) -> None:
         super().__init__(parent)
         self.settings = settings
+        self.storage = storage
         self._drag_offset: Optional[QPoint] = None
 
         self.setWindowTitle("Ember Settings")
@@ -85,7 +95,7 @@ class SettingsDialog(QDialog):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setFixedSize(390, 540)
+        self.setFixedSize(400, 610)
 
         self._build()
         self._load_values()
@@ -178,6 +188,10 @@ class SettingsDialog(QDialog):
         audio_hdr.addStretch(1)
         layout.addLayout(audio_hdr)
 
+        self.chk_always_on_top = QCheckBox("Keep window always on top", self)
+        self.chk_always_on_top.toggled.connect(self._on_always_on_top_toggled)
+        layout.addWidget(self.chk_always_on_top)
+
         self.chk_normalize = QCheckBox("Volume Normalization (soften loudness spikes)", self)
         self.chk_normalize.toggled.connect(self._on_normalize_toggled)
         layout.addWidget(self.chk_normalize)
@@ -189,6 +203,44 @@ class SettingsDialog(QDialog):
         self.chk_toast = QCheckBox("Show Now Playing Desktop Notification", self)
         self.chk_toast.toggled.connect(self._on_toast_toggled)
         layout.addWidget(self.chk_toast)
+
+        # Playlist & Library section
+        lib_hdr = QHBoxLayout()
+        lib_sec = QLabel("PLAYLIST & FAVORITES", self)
+        lib_sec.setObjectName("SettingsSection")
+        lib_hdr.addWidget(lib_sec)
+        lib_hdr.addStretch(1)
+        layout.addLayout(lib_hdr)
+
+        lib_btn_row = QHBoxLayout()
+        lib_btn_row.setSpacing(8)
+        self.btn_export_json = QPushButton("Export JSON", self)
+        self.btn_export_json.setObjectName("Pill")
+        self.btn_export_json.setFixedHeight(26)
+        self.btn_export_json.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_export_json.clicked.connect(self._export_favorites_json)
+        lib_btn_row.addWidget(self.btn_export_json)
+
+        self.btn_export_m3u = QPushButton("Export M3U", self)
+        self.btn_export_m3u.setObjectName("Pill")
+        self.btn_export_m3u.setFixedHeight(26)
+        self.btn_export_m3u.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_export_m3u.clicked.connect(self._export_favorites_m3u)
+        lib_btn_row.addWidget(self.btn_export_m3u)
+
+        self.btn_import_json = QPushButton("Import JSON", self)
+        self.btn_import_json.setObjectName("Pill")
+        self.btn_import_json.setFixedHeight(26)
+        self.btn_import_json.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_import_json.clicked.connect(self._import_favorites_json)
+        lib_btn_row.addWidget(self.btn_import_json)
+
+        layout.addLayout(lib_btn_row)
+
+        self.lib_status_lbl = QLabel("", self)
+        self.lib_status_lbl.setStyleSheet("color: #E5A93C; font-size: 10px; font-weight: 600;")
+        self.lib_status_lbl.setVisible(False)
+        layout.addWidget(self.lib_status_lbl)
 
         # Hotkeys
         hotkey_hdr = QHBoxLayout()
@@ -263,6 +315,9 @@ class SettingsDialog(QDialog):
         self.opacity_slider.setValue(saved_opacity)
         self.opacity_val_lbl.setText(f"{saved_opacity}%")
 
+        ontop = str(self.settings.value(SETTINGS_ALWAYS_ON_TOP, "true")).lower() in ("true", "1", "yes")
+        self.chk_always_on_top.setChecked(ontop)
+
         norm = str(self.settings.value(SETTINGS_NORMALIZE_VOLUME, "false")).lower() in ("true", "1", "yes")
         self.chk_normalize.setChecked(norm)
 
@@ -288,6 +343,10 @@ class SettingsDialog(QDialog):
         self.setStyleSheet(settings_stylesheet())
         self.theme_changed.emit(theme_name)
 
+    def _on_always_on_top_toggled(self, checked: bool) -> None:
+        self.settings.setValue(SETTINGS_ALWAYS_ON_TOP, checked)
+        self.always_on_top_changed.emit(checked)
+
     def _on_normalize_toggled(self, checked: bool) -> None:
         self.settings.setValue(SETTINGS_NORMALIZE_VOLUME, checked)
         self.normalization_changed.emit(checked)
@@ -299,6 +358,63 @@ class SettingsDialog(QDialog):
     def _on_toast_toggled(self, checked: bool) -> None:
         self.settings.setValue(SETTINGS_TOAST_ENABLED, checked)
         self.toast_changed.emit(checked)
+
+    def _export_favorites_json(self) -> None:
+        if not self.storage:
+            self.lib_status_lbl.setText("Storage not available.")
+            self.lib_status_lbl.setVisible(True)
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Favorites (JSON)", "ember_favorites.json", "JSON Files (*.json)"
+        )
+        if path:
+            try:
+                data = self.storage.export_favorites_json()
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(data)
+                self.lib_status_lbl.setText("Favorites exported to JSON.")
+                self.lib_status_lbl.setVisible(True)
+            except Exception as exc:
+                self.lib_status_lbl.setText(f"Export failed: {exc}")
+                self.lib_status_lbl.setVisible(True)
+
+    def _export_favorites_m3u(self) -> None:
+        if not self.storage:
+            self.lib_status_lbl.setText("Storage not available.")
+            self.lib_status_lbl.setVisible(True)
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Favorites (M3U)", "ember_playlist.m3u", "M3U Playlist (*.m3u *.m3u8)"
+        )
+        if path:
+            try:
+                data = self.storage.export_favorites_m3u()
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(data)
+                self.lib_status_lbl.setText("Favorites exported to M3U.")
+                self.lib_status_lbl.setVisible(True)
+            except Exception as exc:
+                self.lib_status_lbl.setText(f"Export failed: {exc}")
+                self.lib_status_lbl.setVisible(True)
+
+    def _import_favorites_json(self) -> None:
+        if not self.storage:
+            self.lib_status_lbl.setText("Storage not available.")
+            self.lib_status_lbl.setVisible(True)
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Favorites (JSON)", "", "JSON Files (*.json)"
+        )
+        if path:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = f.read()
+                count = self.storage.import_favorites_json(data)
+                self.lib_status_lbl.setText(f"Imported {count} songs into favorites.")
+                self.lib_status_lbl.setVisible(True)
+            except Exception as exc:
+                self.lib_status_lbl.setText(f"Import failed: {exc}")
+                self.lib_status_lbl.setVisible(True)
 
     def _validate_hotkeys(self) -> None:
         conflicts: List[str] = []
