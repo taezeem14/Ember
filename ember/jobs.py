@@ -42,12 +42,22 @@ class SearchJob(QRunnable):
         self.limit = limit
         self.signals = SearchSignals()
         self.setAutoDelete(True)
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
 
     def run(self) -> None:
+        if self._cancelled:
+            return
         try:
             results = self.catalog.search(self.query, self.limit)
+            if self._cancelled:
+                return
             self.signals.done.emit(self.query, results)
         except Exception as exc:  # noqa: BLE001 - network surface
+            if self._cancelled:
+                return
             log.warning("search job failed for %r: %s", self.query, exc)
             self.signals.failed.emit(self.query, str(exc))
 
@@ -68,12 +78,22 @@ class RadioJob(QRunnable):
         self.limit = limit
         self.signals = RadioSignals()
         self.setAutoDelete(True)
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
 
     def run(self) -> None:
+        if self._cancelled:
+            return
         try:
             recommendations = self.catalog.similar(self.seed_id, self.limit)
+            if self._cancelled:
+                return
             self.signals.ready.emit(self.seed_id, recommendations)
         except Exception as exc:  # noqa: BLE001
+            if self._cancelled:
+                return
             log.debug("radio job failed for %s: %s", self.seed_id, exc)
             self.signals.failed.emit(self.seed_id, str(exc))
 
@@ -93,14 +113,24 @@ class LoadJob(QRunnable):
         self.resolver = resolver
         self.signals = LoadSignals()
         self.setAutoDelete(True)
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
 
     def run(self) -> None:
+        if self._cancelled:
+            return
         try:
             url = self.resolver.stream_url(self.song.video_id)
+            if self._cancelled:
+                return
             if not url:
                 raise RuntimeError("no playable audio stream was returned")
             self.signals.ready.emit(self.song, url)
         except Exception as exc:  # noqa: BLE001 - network surface
+            if self._cancelled:
+                return
             log.warning("stream resolve failed for %s: %s", self.song.video_id, exc)
             self.signals.failed.emit(self.song, str(exc))
 
@@ -120,14 +150,24 @@ class LinkJob(QRunnable):
         self.url = url
         self.signals = LinkSignals()
         self.setAutoDelete(True)
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
 
     def run(self) -> None:
+        if self._cancelled:
+            return
         try:
             song = self.resolver.describe(self.url)
+            if self._cancelled:
+                return
             if song is None:
                 raise RuntimeError("that link did not resolve to a track")
             self.signals.ready.emit(song)
         except Exception as exc:  # noqa: BLE001
+            if self._cancelled:
+                return
             log.warning("link resolve failed for %r: %s", self.url, exc)
             self.signals.failed.emit(str(exc))
 
@@ -148,15 +188,25 @@ class ArtJob(QRunnable):
         self.timeout = timeout
         self.signals = ArtSignals()
         self.setAutoDelete(True)
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
 
     def run(self) -> None:
+        if self._cancelled:
+            return
         try:
             with requests.get(self.url, timeout=self.timeout) as response:
+                if self._cancelled:
+                    return
                 if response.status_code == 200 and response.content:
                     self.signals.arrived.emit(self.song_id, response.content)
                 else:
                     self.signals.failed.emit(self.song_id, f"HTTP {response.status_code}")
         except Exception as exc:  # noqa: BLE001
+            if self._cancelled:
+                return
             log.debug("artwork fetch failed for %s: %s", self.song_id, exc)
             self.signals.failed.emit(self.song_id, str(exc))
 
@@ -179,10 +229,18 @@ class LyricsJob(QRunnable):
         self.video_id = video_id
         self.signals = LyricsSignals()
         self.setAutoDelete(True)
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
 
     def run(self) -> None:
+        if self._cancelled:
+            return
         try:
             text = self.catalog.lyrics(self.video_id)
+            if self._cancelled:
+                return
             if text:
                 self.signals.done.emit(self.video_id, text)
                 self.signals.ready.emit(self.video_id, text)
@@ -191,6 +249,8 @@ class LyricsJob(QRunnable):
                 self.signals.failed.emit(self.video_id, "No lyrics found for this track")
                 self.signals.lyrics_failed.emit(self.video_id, "No lyrics found for this track")
         except Exception as exc:  # noqa: BLE001
+            if self._cancelled:
+                return
             log.warning("lyrics job failed for %s: %s", self.video_id, exc)
             self.signals.failed.emit(self.video_id, str(exc))
             self.signals.lyrics_failed.emit(self.video_id, str(exc))

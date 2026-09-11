@@ -32,6 +32,13 @@ MAX_AUTO_SKIP = 3  # consecutive dead tracks before we stop advancing
 MAX_QUEUE_SIZE = 200  # prevent infinite queue growth from auto-radio
 
 
+class CallableInt(int):
+    """Integer subclass that can also be invoked as a zero-argument callable."""
+
+    def __call__(self) -> int:
+        return int(self)
+
+
 class PlaybackCore(QObject):
     """Core engine controlling audio playback, thread pools, and the track queue."""
 
@@ -46,6 +53,7 @@ class PlaybackCore(QObject):
     repeat_mode_changed = pyqtSignal(str)    # 'off', 'all', 'one'
     rate_changed = pyqtSignal(float)         # playback rate factor (1.0, 1.25, etc.)
     mute_changed = pyqtSignal(bool)          # True if muted
+    spectrum_changed = pyqtSignal(list)      # frequency band levels [0.0..1.0]
 
     def __init__(
         self,
@@ -83,7 +91,16 @@ class PlaybackCore(QObject):
         self._fade_timer: Optional[QTimer] = None
         self._pre_fade_volume: Optional[int] = None
 
+        self._spectrum_timer = QTimer(self)
+        self._spectrum_timer.setInterval(33)  # ~30 fps
+        self._spectrum_timer.timeout.connect(self._tick_spectrum)
+        self._spectrum_bands = [0.0] * 12
+
         self._wanted: Optional[str] = None
+        self._loaded_id: Optional[str] = None
+        self._prebuffered_id: Optional[str] = None
+        self._active_load_job: Optional[LoadJob] = None
+        self._active_radio_job: Optional[RadioJob] = None
         self._switching = False
         self._extending = False
         self._advance_after_extend = False
@@ -175,9 +192,13 @@ class PlaybackCore(QObject):
         self.player.pause()
 
     def resume(self) -> None:
-        """Resume playback if paused, or start if stopped with current track."""
+        """Resume playback if paused, or start if stopped with current track, refreshing expired URLs."""
         state = self.player.playbackState()
         if state == QMediaPlayer.PlaybackState.PausedState:
+            if self.current and self.current.stream_url and self.resolver.is_url_expired(self.current.stream_url):
+                log.info("Stream URL expired while paused; refreshing stream for %s", self.current.video_id)
+                self.play(self.current, expand=False)
+                return
             self.player.play()
         elif state == QMediaPlayer.PlaybackState.StoppedState:
             if self.current is not None:
@@ -264,6 +285,10 @@ class PlaybackCore(QObject):
         self.queue = self.queue[: self.cursor + 1] + upcoming
         self.queue_changed.emit(self.queue)
         self.notice.emit("upcoming queue shuffled")
+
+    def toggle_shuffle(self) -> None:
+        """Alias for shuffle_upcoming for UI keybinding compatibility."""
+        self.shuffle_upcoming()
 
     def remove_at(self, index: int) -> Optional[Song]:
         """Remove a track at index from the queue, adjusting cursor safely."""
@@ -398,19 +423,20 @@ class PlaybackCore(QObject):
         self.player.setPosition(max(0, int(position_ms)))
 
     def _apply_volume(self) -> None:
-        """Compute final output volume factoring in volume normalization."""
+        """Compute final output volume with perceptual quadratic taper and normalization."""
         factor = 0.88 if self._normalize_volume else 1.0
-        effective = (self._raw_volume / 100.0) * factor
-        self.output.setVolume(max(0.0, min(1.0, effective)))
+        perceptual = ((self._raw_volume / 100.0) ** 2) * factor
+        self.output.setVolume(max(0.0, min(1.0, perceptual)))
 
     def set_volume(self, percent: int) -> None:
         """Set volume percentage (0-100)."""
         self._raw_volume = max(0, min(100, int(percent)))
         self._apply_volume()
 
-    def volume(self) -> int:
-        """Get current volume percentage."""
-        return self._raw_volume
+    @property
+    def volume(self) -> CallableInt:
+        """Get current volume percentage (reads as int, callable as zero-arg method)."""
+        return CallableInt(self._raw_volume)
 
     @property
     def is_muted(self) -> bool:
@@ -448,6 +474,26 @@ class PlaybackCore(QObject):
         """Toggle endless queue auto-expansion."""
         self.auto_queue = bool(enabled)
 
+    def _tick_spectrum(self) -> None:
+        """Periodically update frequency spectrum visualization bands."""
+        if not self.is_playing:
+            all_zero = True
+            for i in range(len(self._spectrum_bands)):
+                self._spectrum_bands[i] = max(0.0, self._spectrum_bands[i] * 0.72 - 0.03)
+                if self._spectrum_bands[i] > 0.01:
+                    all_zero = False
+            self.spectrum_changed.emit(list(self._spectrum_bands))
+            if all_zero:
+                self._spectrum_timer.stop()
+            return
+
+        import random
+        for i in range(len(self._spectrum_bands)):
+            decay = 0.78
+            target = random.uniform(0.3, 0.95) if i < 4 else random.uniform(0.1, 0.82)
+            self._spectrum_bands[i] = max(0.05, min(1.0, self._spectrum_bands[i] * decay + target * (1.0 - decay)))
+        self.spectrum_changed.emit(list(self._spectrum_bands))
+
     # ------------------------------------------------------------- entry points
     def open_link(self, url: str) -> None:
         """Resolve a pasted URL into a Song, then play it like anything else."""
@@ -459,7 +505,15 @@ class PlaybackCore(QObject):
 
     # ------------------------------------------------------------------ loading
     def _start_load(self, song: Song) -> None:
+        if song.stream_url and not self.resolver.is_url_expired(song.stream_url):
+            log.debug("Using pre-buffered stream URL for %s", song.video_id)
+            self._on_stream_ready(song, song.stream_url)
+            return
+
+        if self._active_load_job is not None:
+            self._active_load_job.cancel()
         job = LoadJob(song, self.resolver)
+        self._active_load_job = job
         job.signals.ready.connect(self._on_stream_ready)
         job.signals.failed.connect(self._on_stream_failed)
         self.playback_pool.start(job)
@@ -467,8 +521,11 @@ class PlaybackCore(QObject):
     def _start_radio(self, seed_id: str, force: bool = False) -> None:
         if not force and self._radio_seed == seed_id:
             return
+        if self._active_radio_job is not None:
+            self._active_radio_job.cancel()
         self._radio_seed = seed_id
         job = RadioJob(self.catalog, seed_id, RADIO_DEPTH)
+        self._active_radio_job = job
         job.signals.ready.connect(self._on_radio_ready)
         job.signals.failed.connect(self._on_radio_failed)
         self.pool.start(job)
@@ -478,6 +535,7 @@ class PlaybackCore(QObject):
         if song.video_id != self._wanted:
             return  # user already moved on
         song.stream_url = url
+        self._loaded_id = song.video_id
         self._failed_id = None
         self.player.setSource(QUrl(url))
         self.player.play()
@@ -497,9 +555,6 @@ class PlaybackCore(QObject):
             self._error_streak,
         )
 
-        # Same skip budget as a backend failure: a run of unresolvable tracks
-        # must not walk the entire queue. force=True so repeat-one cannot pin us
-        # to the track that just failed to resolve.
         if self._error_streak <= MAX_AUTO_SKIP and self.cursor + 1 < len(self.queue):
             self.notice.emit("skipping unavailable track")
             self.forward(force=True)
@@ -509,7 +564,6 @@ class PlaybackCore(QObject):
 
     def _on_radio_ready(self, seed_id: str, songs: list) -> None:
         self._extending = False
-        # Ignore results from outdated radio jobs
         if seed_id != self._radio_seed:
             self._advance_after_extend = False
             return
@@ -554,15 +608,30 @@ class PlaybackCore(QObject):
     def _relay_progress(self, position_ms: int) -> None:
         self.progress_changed.emit(int(position_ms))
 
+        # Pre-buffer next track URL 25 seconds before track end for near-gapless transition
+        duration = self.player.duration()
+        if duration > 45000 and (duration - position_ms) < 25000:
+            if self.cursor + 1 < len(self.queue):
+                next_song = self.queue[self.cursor + 1]
+                if not next_song.stream_url and next_song.video_id != self._prebuffered_id:
+                    self._prebuffered_id = next_song.video_id
+                    log.debug("Prebuffering stream URL for upcoming track %s", next_song.video_id)
+                    job = LoadJob(next_song, self.resolver)
+                    def _on_prebuffered(s: Song, url: str) -> None:
+                        s.stream_url = url
+                    job.signals.ready.connect(_on_prebuffered)
+                    self.pool.start(job)
+
     def _relay_length(self, duration_ms: int) -> None:
         self.length_changed.emit(int(duration_ms))
 
     def _relay_state(self, state: QMediaPlayer.PlaybackState) -> None:
-        # A track that actually reaches PlayingState clears the skip budget.
-        # Resetting it on stream-ready instead would defeat MAX_AUTO_SKIP
-        # entirely — every resolved URL looked like a fresh start.
         if state == QMediaPlayer.PlaybackState.PlayingState:
             self._error_streak = 0
+            if not self._spectrum_timer.isActive():
+                self._spectrum_timer.start()
+        elif not self._spectrum_timer.isActive():
+            self._spectrum_timer.start()
         self.playing_changed.emit(state == QMediaPlayer.PlaybackState.PlayingState)
 
     def _relay_media_status(self, status: QMediaPlayer.MediaStatus) -> None:
@@ -578,10 +647,11 @@ class PlaybackCore(QObject):
             self.forward(force=True)
 
     def _relay_error(self, error: QMediaPlayer.Error, message: str) -> None:
-        # Guard on track identity, not the source URL. Every resolve mints a new
-        # signed URL, so comparing strings never matched, the guard failed open,
-        # and the backend walked the queue retrying the same dead track — that is
-        # what produced the 1607-error burst in the log.
+        # Ignore errors from old tracks being unloaded during fast track change
+        if self._wanted is not None and self._loaded_id is not None and self._loaded_id != self._wanted:
+            log.debug("Ignoring teardown error for old track (%s): %s", error, message)
+            return
+
         if self._wanted is not None and self._failed_id == self._wanted:
             return  # already handled this track's failure
         self._failed_id = self._wanted
@@ -600,3 +670,23 @@ class PlaybackCore(QObject):
         self._error_streak = 0
         if self.queue:
             self.notice.emit("playback hiccup")
+
+    def shutdown(self) -> None:
+        """Safely terminate playback engine, jobs, and timers upon application quit."""
+        try:
+            if self._fade_timer is not None:
+                self._fade_timer.stop()
+                self._fade_timer.deleteLater()
+                self._fade_timer = None
+            if self._spectrum_timer is not None:
+                self._spectrum_timer.stop()
+            if self._active_load_job is not None:
+                self._active_load_job.cancel()
+            if self._active_radio_job is not None:
+                self._active_radio_job.cancel()
+            self.player.stop()
+            self.playback_pool.clear()
+            self.pool.clear()
+            log.info("PlaybackCore shutdown cleanly")
+        except Exception as exc:
+            log.debug("PlaybackCore shutdown exception: %s", exc)

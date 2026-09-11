@@ -339,3 +339,38 @@ def test_playback_core_error_streak_cap() -> None:
     core.forward.assert_not_called()
     assert core._error_streak == 0
 
+
+def test_playback_core_volume_callable_int() -> None:
+    core = _create_core()
+    core.set_volume(70)
+
+    # Callable as a zero-argument method
+    assert core.volume() == 70
+
+    # Usable directly in arithmetic expressions
+    assert core.volume + 5 == 75
+    assert core.volume - 10 == 60
+    assert int(core.volume) == 70
+    assert core.volume == 70
+
+
+def test_playback_core_spectrum_and_shutdown() -> None:
+    core = _create_core()
+    emitted_bands = []
+    core.spectrum_changed.connect(lambda bands: emitted_bands.append(bands))
+
+    core._tick_spectrum()
+    assert len(emitted_bands) == 1
+    assert len(emitted_bands[0]) == 12
+
+    # Clean shutdown
+    core.shutdown()
+    assert not core.player.isPlaying()
+
+
+def test_playback_core_shuffle_alias() -> None:
+    core = _create_core()
+    core.shuffle_upcoming = MagicMock()
+    core.toggle_shuffle()
+    core.shuffle_upcoming.assert_called_once()
+

@@ -8,6 +8,7 @@ the "watch playlist" recommendation graph used to keep playback endless.
 
 from __future__ import annotations
 
+import html
 import logging
 import time
 from typing import Any, Callable, Dict, List, Optional, TypeVar
@@ -15,6 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, TypeVar
 from ytmusicapi import YTMusic
 
 from .models import Song
+from .utils import clock
 
 log = logging.getLogger(__name__)
 
@@ -56,30 +58,37 @@ def _with_retry(
 
 def _artist_line(item: Dict[str, Any]) -> str:
     """Extract and normalize artist name(s) from a search or watch item."""
-    raw = item.get("artists") or item.get("author") or []
+    raw = item.get("artists") or item.get("author") or item.get("subtitle") or []
     if isinstance(raw, dict):
         raw = [raw]
     if isinstance(raw, list):
-        names = [
-            entry.get("name")
-            for entry in raw
-            if isinstance(entry, dict) and entry.get("name")
-        ]
+        names: List[str] = []
+        for entry in raw:
+            if isinstance(entry, dict) and entry.get("name"):
+                names.append(str(entry["name"]).strip())
+            elif isinstance(entry, str) and entry.strip():
+                names.append(entry.strip())
         if names:
-            return ", ".join(names)
+            return html.unescape(", ".join(names))
     if isinstance(raw, str) and raw.strip():
-        return raw.strip()
+        return html.unescape(raw.strip())
     return "unknown artist"
 
 
 def _artwork_url(item: Dict[str, Any]) -> str:
     """Pick highest resolution thumbnail available."""
     raw = item.get("thumbnails") or item.get("thumbnail") or []
+    if isinstance(raw, str) and (raw.startswith("http://") or raw.startswith("https://")):
+        return raw.strip()
     if isinstance(raw, dict):
+        if raw.get("url"):
+            return str(raw["url"]).strip()
         raw = [raw]
     if isinstance(raw, list) and raw:
-        # Choose highest width/height or last element
-        valid = [entry for entry in raw if isinstance(entry, dict) and entry.get("url")]
+        valid = [
+            entry for entry in raw
+            if isinstance(entry, dict) and entry.get("url")
+        ]
         if valid:
             def _area(x: Dict[str, Any]) -> int:
                 try:
@@ -87,7 +96,11 @@ def _artwork_url(item: Dict[str, Any]) -> str:
                 except (ValueError, TypeError):
                     return 0
             valid.sort(key=_area)
-            return valid[-1].get("url") or ""
+            return str(valid[-1].get("url") or "").strip()
+        # If the list contains strings directly
+        string_urls = [s.strip() for s in raw if isinstance(s, str) and (s.startswith("http://") or s.startswith("https://"))]
+        if string_urls:
+            return string_urls[-1]
     return ""
 
 
@@ -146,7 +159,14 @@ class CatalogSource:
             log.warning("radio lookup failed for %s after retries: %s", seed_id, exc)
             return related
 
-        for item in watch.get("tracks") or []:
+        if not isinstance(watch, dict):
+            return related
+
+        tracks = watch.get("tracks")
+        if not isinstance(tracks, list):
+            return related
+
+        for item in tracks:
             song = self._build(item, duration_key="length")
             if song is None or song.video_id in seen:
                 continue
@@ -164,6 +184,8 @@ class CatalogSource:
 
         def _do_lyrics() -> Optional[str]:
             watch = self.api.get_watch_playlist(videoId=video_id)
+            if not isinstance(watch, dict):
+                return None
             lyrics_id = watch.get("lyrics")
             if not lyrics_id:
                 return None
@@ -193,11 +215,18 @@ class CatalogSource:
         video_id = item.get("videoId")
         if not video_id:
             return None
-        duration = item.get(duration_key) or ""
+        raw_dur = item.get(duration_key)
+        if raw_dur is None:
+            raw_dur = item.get("duration") or item.get("length") or ""
+        if isinstance(raw_dur, (int, float)):
+            duration = clock(int(raw_dur * 1000))
+        else:
+            duration = str(raw_dur).strip()
+        raw_title = str(item.get("title") or "untitled").strip()
         return Song(
-            video_id=str(video_id),
-            title=str(item.get("title") or "untitled"),
+            video_id=str(video_id).strip(),
+            title=html.unescape(raw_title),
             artist=_artist_line(item),
-            duration=str(duration),
+            duration=duration,
             artwork_url=_artwork_url(item),
         )
