@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QApplication
 from ember.icons import (
     backward_icon,
     close_icon,
+    code_fork_icon,
     collapse_icon,
     expand_icon,
     fire_icon,
@@ -25,6 +26,9 @@ from ember.icons import (
     search_icon,
     settings_icon,
     shuffle_icon,
+    user_icon,
+    volume_high_icon,
+    volume_mute_icon,
 )
 
 
@@ -54,3 +58,7 @@ def test_fontawesome_icons_instantiate() -> None:
     assert not lyrics_icon().isNull()
     assert not moon_icon().isNull()
     assert not gauge_icon().isNull()
+    assert not code_fork_icon().isNull()
+    assert not user_icon().isNull()
+    assert not volume_high_icon().isNull()
+    assert not volume_mute_icon().isNull()

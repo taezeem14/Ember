@@ -185,3 +185,12 @@ def volume_mute_icon(color: Optional[str] = None) -> QIcon:
 def volume_high_icon(color: Optional[str] = None) -> QIcon:
     return get_icon("fa6s.volume-high", color=color or Palette.amber, scale_factor=0.85)
 
+
+def code_fork_icon(color: Optional[str] = None) -> QIcon:
+    return get_icon("fa6s.code-fork", color=color or Palette.amber, scale_factor=0.85)
+
+
+def user_icon(color: Optional[str] = None) -> QIcon:
+    return get_icon("fa6s.user", color=color or Palette.amber_hi, scale_factor=0.85)
+
+

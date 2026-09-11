@@ -11,8 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, Optional
 
-from PyQt6.QtCore import QPoint, QSettings, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QKeySequence
+from PyQt6.QtCore import QPoint, QSettings, QSize, Qt, QUrl, pyqtSignal
+from PyQt6.QtGui import QDesktopServices, QKeySequence
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -20,10 +20,12 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QFrame,
     QGraphicsDropShadowEffect,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -40,7 +42,15 @@ from .config import (
     SETTINGS_THEME,
     SETTINGS_TOAST_ENABLED,
 )
-from .icons import close_icon, keyboard_icon, palette_icon, settings_icon, sliders_icon
+from .icons import (
+    close_icon,
+    code_fork_icon,
+    keyboard_icon,
+    palette_icon,
+    settings_icon,
+    sliders_icon,
+    user_icon,
+)
 from .storage import EmberStorage
 from .theme import settings_stylesheet
 
@@ -96,7 +106,7 @@ class SettingsDialog(QDialog):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setFixedSize(400, 610)
+        self.setFixedSize(450, 680)
 
         self._build()
         self._load_values()
@@ -110,17 +120,11 @@ class SettingsDialog(QDialog):
         self.shell.setObjectName("Shell")
         outer.addWidget(self.shell)
 
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(36)
-        shadow.setOffset(0, 10)
-        shadow.setColor(Qt.GlobalColor.black)
-        self.shell.setGraphicsEffect(shadow)
+        shell_layout = QVBoxLayout(self.shell)
+        shell_layout.setContentsMargins(18, 16, 18, 16)
+        shell_layout.setSpacing(10)
 
-        layout = QVBoxLayout(self.shell)
-        layout.setContentsMargins(20, 18, 20, 18)
-        layout.setSpacing(12)
-
-        # Header with FA Gear Icon
+        # Header with FA Gear Icon (pinned)
         header = QHBoxLayout()
         icon_lbl = QLabel(self)
         icon_lbl.setPixmap(settings_icon(Palette.amber_hi).pixmap(20, 20))
@@ -141,7 +145,21 @@ class SettingsDialog(QDialog):
         close_btn.setIconSize(QSize(13, 13))
         close_btn.clicked.connect(self.accept)
         header.addWidget(close_btn)
-        layout.addLayout(header)
+        shell_layout.addLayout(header)
+
+        # Scrollable Body Container
+        scroll = QScrollArea(self.shell)
+        scroll.setObjectName("SettingsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        body = QWidget()
+        body.setObjectName("SettingsBody")
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(0, 0, 4, 0)
+        layout.setSpacing(11)
 
         # Theme selection
         theme_hdr = QHBoxLayout()
@@ -261,34 +279,125 @@ class SettingsDialog(QDialog):
         layout.addLayout(hotkey_hdr)
 
         self.hotkey_inputs: Dict[str, QLineEdit] = {}
+        hotkey_grid = QGridLayout()
+        hotkey_grid.setHorizontalSpacing(10)
+        hotkey_grid.setVerticalSpacing(6)
         labels = [
-            ("toggle", "Play / Pause:"),
-            ("forward", "Next Track:"),
-            ("back", "Previous:"),
-            ("expand", "Toggle Panel:"),
+            ("toggle", "Play/Pause:", 0, 0),
+            ("forward", "Next Track:", 0, 1),
+            ("back", "Previous:", 1, 0),
+            ("expand", "Toggle Panel:", 1, 1),
         ]
-        for key, text in labels:
+        for key, text, r, c in labels:
             hrow = QHBoxLayout()
-            hrow.setSpacing(6)
+            hrow.setSpacing(4)
             hlabel = QLabel(text, self)
-            hlabel.setFixedWidth(85)
+            hlabel.setFixedWidth(74)
             hinput = QLineEdit(self)
             hinput.setObjectName("SearchField")
-            hinput.setFixedHeight(28)
+            hinput.setFixedHeight(26)
             hinput.textChanged.connect(self._validate_hotkeys)
             self.hotkey_inputs[key] = hinput
             hrow.addWidget(hlabel)
             hrow.addWidget(hinput, 1)
-            layout.addLayout(hrow)
+            hotkey_grid.addLayout(hrow, r, c)
+        layout.addLayout(hotkey_grid)
 
         self.conflict_warn = QLabel("", self)
         self.conflict_warn.setStyleSheet("color: #E26D85; font-size: 10px; font-weight: 700;")
         self.conflict_warn.setVisible(False)
         layout.addWidget(self.conflict_warn)
 
-        layout.addStretch(1)
+        # Credits & Attribution
+        credits_hdr = QHBoxLayout()
+        credits_ico = QLabel(self)
+        credits_ico.setPixmap(code_fork_icon(Palette.amber).pixmap(14, 14))
+        credits_sec = QLabel("CREDITS & ATTRIBUTION", self)
+        credits_sec.setObjectName("SettingsSection")
+        credits_hdr.addWidget(credits_ico)
+        credits_hdr.addWidget(credits_sec)
+        credits_hdr.addStretch(1)
+        layout.addLayout(credits_hdr)
 
-        # Footer
+        credits_card = QFrame(self)
+        credits_card.setObjectName("CreditsCard")
+        credits_layout = QVBoxLayout(credits_card)
+        credits_layout.setContentsMargins(12, 10, 12, 10)
+        credits_layout.setSpacing(8)
+
+        # Taezeem row (Fork Maintainer)
+        row1 = QHBoxLayout()
+        row1.setSpacing(8)
+        u1_ico = QLabel(credits_card)
+        u1_ico.setPixmap(user_icon(Palette.amber_hi).pixmap(14, 14))
+        row1.addWidget(u1_ico)
+
+        info1 = QVBoxLayout()
+        info1.setSpacing(2)
+        name1_row = QHBoxLayout()
+        name1_row.setSpacing(6)
+        name1 = QLabel("Muhammad Taezeem Tariq Matta", credits_card)
+        name1.setObjectName("CreditName")
+        badge1 = QLabel("MAINTAINER", credits_card)
+        badge1.setObjectName("CreditBadge")
+        name1_row.addWidget(name1)
+        name1_row.addWidget(badge1)
+        name1_row.addStretch(1)
+
+        role1 = QLabel("Fork Architect • UI, Lyrics, Storage & Resilience", credits_card)
+        role1.setObjectName("CreditRole")
+        info1.addLayout(name1_row)
+        info1.addWidget(role1)
+        row1.addLayout(info1, 1)
+
+        gh1_btn = QPushButton("GitHub", credits_card)
+        gh1_btn.setObjectName("Pill")
+        gh1_btn.setFixedHeight(24)
+        gh1_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        gh1_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/taezeem14")))
+        row1.addWidget(gh1_btn)
+        credits_layout.addLayout(row1)
+
+        # Mayank Malaviya row (Original Creator)
+        row2 = QHBoxLayout()
+        row2.setSpacing(8)
+        u2_ico = QLabel(credits_card)
+        u2_ico.setPixmap(user_icon(Palette.clay).pixmap(14, 14))
+        row2.addWidget(u2_ico)
+
+        info2 = QVBoxLayout()
+        info2.setSpacing(2)
+        name2_row = QHBoxLayout()
+        name2_row.setSpacing(6)
+        name2 = QLabel("Mayank Malaviya", credits_card)
+        name2.setObjectName("CreditName")
+        badge2 = QLabel("ORIGINAL CREATOR", credits_card)
+        badge2.setObjectName("CreditBadgeOg")
+        name2_row.addWidget(name2)
+        name2_row.addWidget(badge2)
+        name2_row.addStretch(1)
+
+        role2 = QLabel("Original Ember Concept & Initial Architecture", credits_card)
+        role2.setObjectName("CreditRole")
+        info2.addLayout(name2_row)
+        info2.addWidget(role2)
+        row2.addLayout(info2, 1)
+
+        gh2_btn = QPushButton("GitHub", credits_card)
+        gh2_btn.setObjectName("Pill")
+        gh2_btn.setFixedHeight(24)
+        gh2_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        gh2_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/AIwolfie")))
+        row2.addWidget(gh2_btn)
+        credits_layout.addLayout(row2)
+
+        layout.addWidget(credits_card)
+
+        layout.addStretch(1)
+        scroll.setWidget(body)
+        shell_layout.addWidget(scroll, 1)
+
+        # Footer (pinned at bottom)
         footer = QHBoxLayout()
         reset_btn = QPushButton("Reset Hotkeys", self)
         reset_btn.setObjectName("Pill")
@@ -299,14 +408,14 @@ class SettingsDialog(QDialog):
 
         footer.addStretch(1)
 
-        save_btn = QPushButton("Save & Done", self)
+        save_btn = QPushButton("Save && Done", self)
         save_btn.setObjectName("AmberButton")
         save_btn.setFixedHeight(28)
         save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         save_btn.clicked.connect(self._save_and_close)
         footer.addWidget(save_btn)
 
-        layout.addLayout(footer)
+        shell_layout.addLayout(footer)
 
     def _load_values(self) -> None:
         saved_theme = str(self.settings.value(SETTINGS_THEME, "Amber"))

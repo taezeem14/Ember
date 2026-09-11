@@ -40,3 +40,22 @@ def test_tray_presence_instantiation() -> None:
     tray = ember.tray.TrayPresence()
     assert tray.icon is not None
     assert tray.menu is not None
+
+
+def test_settings_dialog_instantiation(tmp_path) -> None:
+    import sys
+    from PyQt6.QtCore import QSettings
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication(sys.argv)
+    ini_path = str(tmp_path / "test_settings.ini")
+    qs = QSettings(ini_path, QSettings.Format.IniFormat)
+    dialog = ember.settings_dialog.SettingsDialog(qs)
+    assert dialog.width() == 450
+    assert dialog.height() == 680
+    assert dialog.theme_combo is not None
+    assert dialog.opacity_slider is not None
+    # Verify credits card is present
+    credits_card = dialog.findChild(ember.settings_dialog.QFrame, "CreditsCard")
+    assert credits_card is not None
+    dialog.close()
+

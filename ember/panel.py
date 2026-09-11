@@ -135,7 +135,7 @@ def rounded_pixmap(source: QPixmap, radius: int) -> QPixmap:
     painter = QPainter(canvas)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     path = QPainterPath()
-    path.addRoundedRect(QRectF(0, 0, side, side), side * 0.24, side * 0.24)
+    path.addEllipse(QRectF(0, 0, side, side))
     painter.setClipPath(path)
     painter.drawPixmap(0, 0, cropped)
     painter.end()
@@ -724,7 +724,8 @@ class FloatingPanel(QWidget):
         row.setContentsMargins(10, 0, 10, 0)
         row.setSpacing(8)
 
-        self.ribbon_art = self._art_label(ART_COMPACT, 10)
+        self.ribbon_art = self._art_label(ART_COMPACT)
+        self.ribbon_art.setPixmap(music_icon(Palette.muted).pixmap(18, 18))
         row.addWidget(self.ribbon_art)
 
         words = QVBoxLayout()
@@ -838,14 +839,16 @@ class FloatingPanel(QWidget):
         top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(11)
 
-        self.hero_art = self._art_label(ART_HERO, 14)
-        top.addWidget(self.hero_art, 0, Qt.AlignmentFlag.AlignTop)
+        self.hero_art = self._art_label(56)
+        fallback_pix = music_icon(Palette.amber_hi).pixmap(26, 26)
+        self.hero_art.setPixmap(fallback_pix)
+        top.addWidget(self.hero_art, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self.disc = VinylDisc(ART_HERO - 22, card)
-        top.addWidget(self.disc, 0, Qt.AlignmentFlag.AlignTop)
+        self.disc = VinylDisc(48, card)
+        top.addWidget(self.disc, 0, Qt.AlignmentFlag.AlignVCenter)
 
         words = QVBoxLayout()
-        words.setContentsMargins(0, 4, 0, 0)
+        words.setContentsMargins(4, 2, 0, 0)
         words.setSpacing(3)
         self.hero_title = QLabel("pick something to play", card)
         self.hero_title.setObjectName("HeroTitle")
@@ -892,11 +895,11 @@ class FloatingPanel(QWidget):
         # Transport controls inside NowCard
         transport = QHBoxLayout()
         transport.setContentsMargins(0, 2, 0, 0)
-        transport.setSpacing(10)
+        transport.setSpacing(12)
 
         self.panel_shuffle = QPushButton(card)
         self.panel_shuffle.setObjectName("ModeToggle")
-        self.panel_shuffle.setFixedSize(28, 28)
+        self.panel_shuffle.setFixedSize(30, 30)
         self.panel_shuffle.setCursor(Qt.CursorShape.PointingHandCursor)
         self.panel_shuffle.setToolTip("Shuffle upcoming queue")
         self.panel_shuffle.setIcon(shuffle_icon(False))
@@ -906,7 +909,7 @@ class FloatingPanel(QWidget):
 
         transport.addStretch(1)
 
-        self.panel_prev = self._ghost_btn(28)
+        self.panel_prev = self._ghost_btn(30)
         self.panel_prev.setToolTip("previous track")
         self.panel_prev.setIcon(backward_icon())
         self.panel_prev.setIconSize(QSize(14, 14))
@@ -915,15 +918,15 @@ class FloatingPanel(QWidget):
 
         self.panel_play = QPushButton(card)
         self.panel_play.setObjectName("RoundPlay")
-        self.panel_play.setFixedSize(36, 36)
+        self.panel_play.setFixedSize(42, 42)
         self.panel_play.setCursor(Qt.CursorShape.PointingHandCursor)
         self.panel_play.setToolTip("play / pause")
         self.panel_play.setIcon(play_icon())
-        self.panel_play.setIconSize(QSize(16, 16))
+        self.panel_play.setIconSize(QSize(18, 18))
         self.panel_play.clicked.connect(self.core.toggle)
         transport.addWidget(self.panel_play)
 
-        self.panel_next = self._ghost_btn(28)
+        self.panel_next = self._ghost_btn(30)
         self.panel_next.setToolTip("next track")
         self.panel_next.setIcon(forward_icon())
         self.panel_next.setIconSize(QSize(14, 14))
@@ -971,9 +974,9 @@ class FloatingPanel(QWidget):
     def _build_tabs_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(5)
+        row.setSpacing(4)
 
-        self.tab_queue = QPushButton(" Up Next", self)
+        self.tab_queue = QPushButton(" Queue", self)
         self.tab_queue.setObjectName("TabButton")
         self.tab_queue.setCheckable(True)
         self.tab_queue.setChecked(True)
@@ -1126,13 +1129,14 @@ class FloatingPanel(QWidget):
         return row
 
     # ------------------------------------------------------------- small parts
-    def _art_label(self, side: int, radius: int) -> QLabel:
+    def _art_label(self, side: int, radius: Optional[int] = None) -> QLabel:
         label = QLabel(self)
         label.setFixedSize(side, side)
+        rad = (side // 2) if radius is None else radius
         label.setStyleSheet(
-            f"background: rgba(244, 233, 221, 0.05);"
-            f"border: 1px solid {Palette.line};"
-            f"border-radius: {radius}px;"
+            f"background: rgba(244, 233, 221, 0.04);"
+            f"border: 1.5px solid {Palette.line};"
+            f"border-radius: {rad}px;"
         )
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         return label
@@ -1661,8 +1665,8 @@ class FloatingPanel(QWidget):
             return
         elide_into(self.ribbon_title, song.title, self.ribbon_title.width() or 160)
         elide_into(self.ribbon_artist, song.byline, self.ribbon_artist.width() or 160)
-        elide_into(self.hero_title, song.title, 190)
-        elide_into(self.hero_artist, song.byline, 190)
+        elide_into(self.hero_title, song.title, 220)
+        elide_into(self.hero_artist, song.byline, 220)
 
         self.seek.setRange(0, 0)
         self.seek.setValue(0)
@@ -1680,7 +1684,7 @@ class FloatingPanel(QWidget):
         else:
             fallback_pix = music_icon(Palette.amber_hi).pixmap(24, 24)
             self.ribbon_art.setPixmap(fallback_pix)
-            self.hero_art.setPixmap(music_icon(Palette.amber_hi).pixmap(40, 40))
+            self.hero_art.setPixmap(music_icon(Palette.amber_hi).pixmap(26, 26))
             self._request_art(song)
 
         # Show desktop toast if enabled
