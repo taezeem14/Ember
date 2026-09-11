@@ -199,6 +199,7 @@ Contributor — development improvements and project upgrades.
 
 Ember is distributed under the **MIT License**.  
 See [LICENSE](LICENSE) for the complete license and copyright notice.
+
 =======
 
 <div align="center">
