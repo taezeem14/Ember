@@ -186,6 +186,7 @@ Run the automated test suite locally:
 ## 🫡 Credits
 
 ### Creator & Maintainer
+<<<<<<< HEAD
 
 **Mayank Malaviya aka ([@AIwolfie](https://github.com/AIwolfie))**  
 Original creator, architect, and maintainer of Ember.
@@ -199,7 +200,21 @@ Contributor — development improvements and project upgrades.
 
 Ember is distributed under the **MIT License**.  
 See [LICENSE](LICENSE) for the complete license and copyright notice.
+=======
+>>>>>>> a233c0f (fix(player,stream): stop mid-track skips and unplayable tracks; add author credit)
 
+**Mayank Malaviya aka ([@AIwolfie](https://github.com/AIwolfie))**  
+Original creator, architect, and maintainer of Ember.
+
+### Contributors
+
+**Muhammad Taezeem Tariq Matta** ([@taezeem14](https://github.com/taezeem14))  
+Contributor — development improvements and project upgrades.
+
+### License
+
+Ember is distributed under the **MIT License**.  
+See [LICENSE](LICENSE) for the complete license and copyright notice.
 ---
 
 <div align="center">

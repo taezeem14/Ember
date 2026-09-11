@@ -17,6 +17,11 @@ APP_TAGLINE = "cozy listening"
 ORG_NAME = "Ember Audio"
 APP_ID = "ember.desktop.companion"
 
+# ---------------------------------------------------------------- attribution
+APP_AUTHOR = "Mayank Malaviya"
+APP_AUTHOR_HANDLE = "AIwolfie"
+APP_CREDIT = f"developed by {APP_AUTHOR} aka {APP_AUTHOR_HANDLE}"
+
 # ---------------------------------------------------------------- geometry
 PANEL_WIDTH = 392
 SHELL_MARGIN = 10          # transparent gutter that gives the drop shadow room

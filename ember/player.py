@@ -85,7 +85,7 @@ class PlaybackCore(QObject):
         self._extending = False
         self._advance_after_extend = False
         self._radio_seed: Optional[str] = None
-        self._failed_source: Optional[str] = None
+        self._failed_id: Optional[str] = None
         self._error_streak = 0
 
         self.player.positionChanged.connect(self._relay_progress)
@@ -139,13 +139,15 @@ class PlaybackCore(QObject):
             self.cursor_changed.emit(slot)
 
         self._wanted = song.video_id
-        self._failed_source = None  # allow manual retries of failed tracks
+        self._failed_id = None  # allow manual retries of failed tracks
         self._switching = True
         self.loading_changed.emit(True)
         self.song_changed.emit(song)
 
-        # Immediate off-thread stream resolution on isolated pool
-        self.playback_pool.clear()  # cancel stale queued jobs from rapid skips
+        # Immediate off-thread stream resolution on isolated pool. Stale jobs are
+        # dropped by the _wanted check in the slots — never clear() the pool here:
+        # it deletes the in-flight job's signal carrier mid-emit, which wedges
+        # _switching True and freezes the player for good.
         self._start_load(song)
         if expand:
             # Parallel background recommendation fetch
@@ -385,8 +387,7 @@ class PlaybackCore(QObject):
         if song.video_id != self._wanted:
             return  # user already moved on
         song.stream_url = url
-        self._failed_source = None
-        self._error_streak = 0
+        self._failed_id = None
         self.player.setSource(QUrl(url))
         self.player.play()
         self._switching = False
@@ -400,9 +401,14 @@ class PlaybackCore(QObject):
         self.notice.emit("skipping unavailable track")
         log.warning("playback aborted for %s: %s", song.video_id, message)
 
-        # Auto-recover by advancing to the next available track
-        if self.cursor + 1 < len(self.queue):
-            self.forward()
+        # Same skip budget as a backend failure: a run of unresolvable tracks
+        # must not walk the entire queue. force=True so repeat-one cannot pin us
+        # to the track that just failed to resolve.
+        self._error_streak += 1
+        if self._error_streak <= MAX_AUTO_SKIP and self.cursor + 1 < len(self.queue):
+            self.forward(force=True)
+            return
+        self._error_streak = 0
 
     def _on_radio_ready(self, seed_id: str, songs: list) -> None:
         self._extending = False
@@ -454,6 +460,11 @@ class PlaybackCore(QObject):
         self.length_changed.emit(int(duration_ms))
 
     def _relay_state(self, state: QMediaPlayer.PlaybackState) -> None:
+        # A track that actually reaches PlayingState clears the skip budget.
+        # Resetting it on stream-ready instead would defeat MAX_AUTO_SKIP
+        # entirely — every resolved URL looked like a fresh start.
+        if state == QMediaPlayer.PlaybackState.PlayingState:
+            self._error_streak = 0
         self.playing_changed.emit(state == QMediaPlayer.PlaybackState.PlayingState)
 
     def _relay_media_status(self, status: QMediaPlayer.MediaStatus) -> None:
@@ -469,10 +480,13 @@ class PlaybackCore(QObject):
             self.forward(force=True)
 
     def _relay_error(self, error: QMediaPlayer.Error, message: str) -> None:
-        source = self.player.source().toString()
-        if source and source == self._failed_source:
-            return  # backend is retry-looping on a dead source
-        self._failed_source = source
+        # Guard on track identity, not the source URL. Every resolve mints a new
+        # signed URL, so comparing strings never matched, the guard failed open,
+        # and the backend walked the queue retrying the same dead track — that is
+        # what produced the 1607-error burst in the log.
+        if self._wanted is not None and self._failed_id == self._wanted:
+            return  # already handled this track's failure
+        self._failed_id = self._wanted
         log.warning("media player error (%s): %s", error, message)
 
         self.player.stop()
@@ -482,7 +496,7 @@ class PlaybackCore(QObject):
         self._error_streak += 1
         if self._error_streak <= MAX_AUTO_SKIP and self.cursor + 1 < len(self.queue):
             self.notice.emit("skipping a dead track")
-            self.forward()
+            self.forward(force=True)
             return
 
         self._error_streak = 0
