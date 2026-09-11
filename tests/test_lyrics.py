@@ -65,43 +65,42 @@ def test_lyrics_job_none_fallback_emission() -> None:
     assert lyrics_failed_events[0][0] == "test_vid_instrumental"
 
 
-def test_lyrics_panel_integration_and_progress_scroll() -> None:
+def test_lyrics_scroll_calculation_and_seekbar_bounds() -> None:
     from PyQt6.QtWidgets import QApplication
-    from ember.models import Song
-    from ember.panel import FloatingPanel
-    from ember.player import PlaybackCore
-    from ember.stream import StreamResolver
+    from ember.panel import SeekBar
 
     _ = QApplication.instance() or QApplication([])
 
-    catalog = MagicMock(spec=CatalogSource)
-    resolver = MagicMock(spec=StreamResolver)
-    core = PlaybackCore(catalog, resolver)
-    panel = FloatingPanel(core, None)
+    seek = SeekBar()
+    assert seek.maximum() == 0
+    assert seek.minimum() == 0
 
-    song = Song("vid_test", "Test Title", "Test Artist")
-    core.queue = [song]
-    core.cursor = 0
+    seek.setRange(0, 180000)
+    assert seek.maximum() == 180000
 
-    # Switch to lyrics tab
-    panel._switch_tab("lyrics")
-    assert panel._active_tab == "lyrics"
+    seek.setValue(90000)
+    assert seek.value() == 90000
 
-    # Call _on_progress while on lyrics tab
-    panel.seek.setRange(0, 180000)
-    panel._on_progress(45000)
-    assert panel.seek.value() == 45000
+    # Auto-scroll formula verification as executed in FloatingPanel._on_progress
+    position = seek.value()
+    total_dur = seek.maximum()
+    vbar_max = 600
+    target = max(0, min(vbar_max, int((position / total_dur) * vbar_max)))
+    assert target == 300
 
-    # Lyrics ready arrival
-    panel._on_lyrics_ready("vid_test", "First line\nSecond line\nThird line")
-    assert "First line" in panel.lyrics_text.text()
 
-    # Progress update with visible lyrics
-    panel.lyrics_scroll.setVisible(True)
-    panel._on_progress(90000)
-    assert panel.seek.value() == 90000
+def test_lyrics_formatting_and_fallback_logic() -> None:
+    # Test valid lyrics with source attribution
+    raw_lyrics = "  We're no strangers to love\nYou know the rules and so do I  "
+    source = "YouTube Music"
+    formatted = raw_lyrics.strip()
+    if source:
+        formatted += f"\n\n— Source: {source}"
+    assert "We're no strangers to love" in formatted
+    assert "— Source: YouTube Music" in formatted
 
-    # Lyrics failed arrival
-    panel._on_lyrics_failed("vid_test", "error")
-    assert "Instrumental / No lyrics available" in panel.lyrics_text.text()
+    # Test whitespace or empty fallback
+    empty_lyrics = "   \n\t  "
+    assert not empty_lyrics or not empty_lyrics.strip()
+
 

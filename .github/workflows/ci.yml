@@ -39,5 +39,7 @@ jobs:
         python -c "import ember; import ember.models; import ember.storage; print('Ember modules imported cleanly!')"
 
     - name: Run Pytest Suite
+      env:
+        QT_QPA_PLATFORM: offscreen
       run: |
         pytest -v tests/
