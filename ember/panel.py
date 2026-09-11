@@ -42,7 +42,6 @@ from PyQt6.QtWidgets import (
 
 from .config import (
     ANIM_MS,
-    APP_CREDIT,
     APP_NAME,
     APP_TAGLINE,
     ART_COMPACT,
@@ -825,19 +824,6 @@ class FloatingPanel(QWidget):
         row.addWidget(self.collapse_pill, 0, Qt.AlignmentFlag.AlignVCenter)
 
         block.addLayout(row)
-
-        # Full-width line — the credit never shares the row with the tagline.
-        # At 392px the tagline + credit together need ~397px and only ~190px exists
-        # beside the status chip and collapse pill, so the credit would clip.
-        credit_row = QHBoxLayout()
-        credit_row.setContentsMargins(22, 0, 0, 0)
-        credit = QLabel(APP_CREDIT, self)
-        credit.setObjectName("Credit")
-        credit.setToolTip("developed by Mayank Malaviya aka AIwolfie")
-        credit_row.addWidget(credit)
-        credit_row.addStretch(1)
-        block.addLayout(credit_row)
-
         return block
 
     def _build_now_card(self) -> QWidget:
