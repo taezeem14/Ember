@@ -185,9 +185,20 @@ Run the automated test suite locally:
 
 ## 🫡 Credits
 
-- **Original Creator**: **Mayank Malaviya** — Original creator, architect, and copyright holder of the Ember project.
-- **Fork Maintainer & Upgrades**: **Muhammad Taezeem Tariq Matta** ([@taezeem14](https://github.com/taezeem14)) — 19yo solo developer building full-stack AI, high-performance desktop apps, and cybersecurity tools.
-- **License**: Distributed under the terms of the **MIT License**. The original copyright line is preserved word-for-word in [LICENSE](LICENSE).
+### Creator & Maintainer
+
+**Mayank Malaviya aka ([@AIwolfie](https://github.com/AIwolfie)) **  
+Original creator, architect, and maintainer of Ember.
+
+### Contributors
+
+**Muhammad Taezeem Tariq Matta** ([@taezeem14](https://github.com/taezeem14))  
+Contributor — development improvements and project upgrades.
+
+### License
+
+Ember is distributed under the **MIT License**.  
+See [LICENSE](LICENSE) for the complete license and copyright notice.
 
 ---
 
