@@ -187,6 +187,12 @@ class SeekBar(QWidget):
     def value(self) -> int:
         return self._value
 
+    def maximum(self) -> int:  # noqa: N802
+        return self._maximum
+
+    def minimum(self) -> int:  # noqa: N802
+        return self._minimum
+
     def _value_at(self, x: int) -> int:
         span = max(1, self.width())
         ratio = min(1.0, max(0.0, x / span))
@@ -405,6 +411,9 @@ class VolumeDial(QWidget):
             tip = "muted" if self._is_muted else f"volume {clamped}%"
             self.setToolTip(tip)
             self.update()
+
+    def setValue(self, value: int) -> None:  # noqa: N802
+        self.set_value(value)
 
     def set_muted(self, muted: bool) -> None:
         self._is_muted = bool(muted)
@@ -650,6 +659,7 @@ class FloatingPanel(QWidget):
 
         self._current_lyrics_vid: Optional[str] = None
         self._lyrics_loaded_for: Optional[str] = None
+        self._active_lyrics_job: Optional[LyricsJob] = None
         self._sleep_seconds_remaining: int = 0
         self._sleep_fading: bool = False
         self._sleep_timer = QTimer(self)
@@ -1720,9 +1730,13 @@ class FloatingPanel(QWidget):
 
     # ------------------------------------------------------------- lyrics slots
     def _fetch_lyrics(self, song: Song) -> None:
+        if self._active_lyrics_job is not None:
+            self._active_lyrics_job.cancel()
         self._current_lyrics_vid = song.video_id
         self.lyrics_text.setText(f"Searching lyrics for\n{song.title}...")
+        self.lyrics_scroll.verticalScrollBar().setValue(0)
         job = LyricsJob(self.core.catalog, song.video_id)
+        self._active_lyrics_job = job
         job.signals.lyrics_ready.connect(self._on_lyrics_ready)
         job.signals.lyrics_failed.connect(self._on_lyrics_failed)
         self.core.pool.start(job)
@@ -1731,10 +1745,14 @@ class FloatingPanel(QWidget):
         if self._current_lyrics_vid != video_id:
             return
         self._lyrics_loaded_for = video_id
-        formatted = lyrics
+        if not lyrics or not lyrics.strip():
+            self.lyrics_text.setText("Instrumental / No lyrics available")
+            return
+        formatted = lyrics.strip()
         if source:
             formatted += f"\n\n— Source: {source}"
         self.lyrics_text.setText(formatted)
+        self.lyrics_scroll.verticalScrollBar().setValue(0)
 
     def _on_lyrics_failed(self, video_id: str, message: str) -> None:
         if self._current_lyrics_vid != video_id:
@@ -1857,11 +1875,12 @@ class FloatingPanel(QWidget):
         self._update_elapsed_label(position)
         if getattr(self, "_active_tab", "") == "lyrics" and self.lyrics_scroll.isVisible():
             vbar = self.lyrics_scroll.verticalScrollBar()
-            total_dur = self.seek.maximum()
-            if total_dur > 0 and vbar.maximum() > 0:
-                target = int((position / total_dur) * vbar.maximum())
-                if abs(vbar.value() - target) > 4:
-                    vbar.setValue(target)
+            if not vbar.isSliderDown():
+                total_dur = self.seek.maximum()
+                if total_dur > 0 and vbar.maximum() > 0:
+                    target = max(0, min(vbar.maximum(), int((position / total_dur) * vbar.maximum())))
+                    if abs(vbar.value() - target) > 4:
+                        vbar.setValue(target)
 
     def _on_length(self, duration: int) -> None:
         self.seek.setRange(0, max(0, duration))

@@ -97,6 +97,11 @@ class StreamResolver:
         if overrides:
             self.options.update(overrides)
 
+    @staticmethod
+    def is_url_expired(url: Optional[str], buffer_seconds: int = 90) -> bool:
+        """Check if a signed streaming URL has expired or is near expiry."""
+        return is_url_expired(url, buffer_seconds=buffer_seconds)
+
     def _probe(self, target: str, max_attempts: int = 3) -> Dict[str, Any]:
         """Extract info from yt-dlp with retries and exponential backoff."""
         last_exc: Optional[Exception] = None

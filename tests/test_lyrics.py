@@ -63,3 +63,45 @@ def test_lyrics_job_none_fallback_emission() -> None:
     assert "No lyrics found" in failed_events[0][1]
     assert len(lyrics_failed_events) == 1
     assert lyrics_failed_events[0][0] == "test_vid_instrumental"
+
+
+def test_lyrics_panel_integration_and_progress_scroll() -> None:
+    from PyQt6.QtWidgets import QApplication
+    from ember.models import Song
+    from ember.panel import FloatingPanel
+    from ember.player import PlaybackCore
+    from ember.stream import StreamResolver
+
+    _ = QApplication.instance() or QApplication([])
+
+    catalog = MagicMock(spec=CatalogSource)
+    resolver = MagicMock(spec=StreamResolver)
+    core = PlaybackCore(catalog, resolver)
+    panel = FloatingPanel(core, None)
+
+    song = Song("vid_test", "Test Title", "Test Artist")
+    core.queue = [song]
+    core.cursor = 0
+
+    # Switch to lyrics tab
+    panel._switch_tab("lyrics")
+    assert panel._active_tab == "lyrics"
+
+    # Call _on_progress while on lyrics tab
+    panel.seek.setRange(0, 180000)
+    panel._on_progress(45000)
+    assert panel.seek.value() == 45000
+
+    # Lyrics ready arrival
+    panel._on_lyrics_ready("vid_test", "First line\nSecond line\nThird line")
+    assert "First line" in panel.lyrics_text.text()
+
+    # Progress update with visible lyrics
+    panel.lyrics_scroll.setVisible(True)
+    panel._on_progress(90000)
+    assert panel.seek.value() == 90000
+
+    # Lyrics failed arrival
+    panel._on_lyrics_failed("vid_test", "error")
+    assert "Instrumental / No lyrics available" in panel.lyrics_text.text()
+

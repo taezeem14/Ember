@@ -61,3 +61,66 @@ def test_remaining_time_countdown_calculation() -> None:
     assert f"-{clock(max(0, duration_ms - duration_ms))}" == "-0:00"
     assert f"-{clock(max(0, 10000 - 20000))}" == "-0:00"
 
+
+def test_seekbar_range_and_bounds() -> None:
+    from PyQt6.QtWidgets import QApplication
+    from ember.panel import SeekBar
+    _ = QApplication.instance() or QApplication([])
+
+    seek = SeekBar()
+    assert seek.maximum() == 0
+    assert seek.minimum() == 0
+    assert seek.value() == 0
+
+    seek.setRange(0, 180000)
+    assert seek.maximum() == 180000
+    assert seek.minimum() == 0
+
+    seek.setValue(45000)
+    assert seek.value() == 45000
+
+    # Clamping
+    seek.setValue(250000)
+    assert seek.value() == 180000
+    seek.setValue(-500)
+    assert seek.value() == 0
+
+
+def test_volumedial_value_and_alias() -> None:
+    from PyQt6.QtWidgets import QApplication
+    from ember.panel import VolumeDial
+    _ = QApplication.instance() or QApplication([])
+
+    dial = VolumeDial(50)
+    assert dial.value() == 50
+
+    dial.set_value(75)
+    assert dial.value() == 75
+
+    # Qt compatibility alias
+    dial.setValue(35)
+    assert dial.value() == 35
+
+
+def test_stream_resolver_is_url_expired() -> None:
+    import time
+    from ember.stream import StreamResolver, is_url_expired
+
+    # None or empty
+    assert is_url_expired(None) is True
+    assert StreamResolver.is_url_expired(None) is True
+    assert is_url_expired("") is True
+
+    # Future expiry
+    future_ts = int(time.time()) + 3600
+    future_url = f"https://rr1---sn.googlevideo.com/videoplayback?expire={future_ts}&id=abc"
+    assert is_url_expired(future_url) is False
+    assert StreamResolver.is_url_expired(future_url) is False
+
+    # Past expiry
+    past_ts = int(time.time()) - 100
+    past_url = f"https://rr1---sn.googlevideo.com/videoplayback?expire={past_ts}&id=abc"
+    assert is_url_expired(past_url) is True
+    assert StreamResolver.is_url_expired(past_url) is True
+
+
