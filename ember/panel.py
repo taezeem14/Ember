@@ -113,15 +113,22 @@ SWP_NOACTIVATE = 0x0010
 
 # ---------------------------------------------------------------- paint helpers
 def rounded_pixmap(source: QPixmap, radius: int) -> QPixmap:
-    """Clip a pixmap to a rounded square with smooth anti-aliased corners."""
+    """Clip a pixmap to a rounded square with smooth anti-aliased corners, properly scaled."""
+    if source.isNull():
+        return source
+    target_side = max(16, radius * 2)
     scaled = source.scaled(
-        QSize(radius * 2, radius * 2).expandedTo(source.size()),
+        target_side,
+        target_side,
         Qt.AspectRatioMode.KeepAspectRatioByExpanding,
         Qt.TransformationMode.SmoothTransformation,
     )
     side = min(scaled.width(), scaled.height())
     cropped = scaled.copy(
-        (scaled.width() - side) // 2, (scaled.height() - side) // 2, side, side
+        max(0, (scaled.width() - side) // 2),
+        max(0, (scaled.height() - side) // 2),
+        side,
+        side,
     )
     canvas = QPixmap(side, side)
     canvas.fill(Qt.GlobalColor.transparent)
@@ -1401,7 +1408,10 @@ class FloatingPanel(QWidget):
         dlg.normalization_changed.connect(self.core.set_normalize_volume)
         dlg.endless_changed.connect(self._on_endless_from_settings)
         dlg.hotkeys_changed.connect(lambda _: self.hotkeys_updated.emit())
-        dlg.exec()
+        try:
+            dlg.exec()
+        finally:
+            dlg.deleteLater()
 
     def set_always_on_top(self, enabled: bool) -> None:
         self.always_on_top = bool(enabled)
@@ -1489,10 +1499,12 @@ class FloatingPanel(QWidget):
             self._anchor = None
             return
         bounds = screen.availableGeometry()
+        bounds_right = bounds.x() + bounds.width()
+        bounds_bottom = bounds.y() + bounds.height()
         left_gap = self.x() - bounds.left()
-        right_gap = bounds.right() - (self.x() + self.width())
+        right_gap = bounds_right - (self.x() + self.width())
         top_gap = self.y() - bounds.top()
-        bottom_gap = bounds.bottom() - (self.y() + self.height())
+        bottom_gap = bounds_bottom - (self.y() + self.height())
 
         h_edge = "right" if right_gap <= left_gap else "left"
         v_edge = "bottom" if bottom_gap <= top_gap else "top"
@@ -1511,9 +1523,11 @@ class FloatingPanel(QWidget):
             self.clamp_to_screen()
             return
         bounds = screen.availableGeometry()
+        bounds_right = bounds.x() + bounds.width()
+        bounds_bottom = bounds.y() + bounds.height()
         h_edge, h_gap, v_edge, v_gap = self._anchor
-        x = bounds.right() - self.width() - h_gap if h_edge == "right" else bounds.left() + h_gap
-        y = bounds.bottom() - self.height() - v_gap if v_edge == "bottom" else bounds.top() + v_gap
+        x = bounds_right - self.width() - h_gap if h_edge == "right" else bounds.left() + h_gap
+        y = bounds_bottom - self.height() - v_gap if v_edge == "bottom" else bounds.top() + v_gap
         self.move(int(x), int(y))
         self.clamp_to_screen()
 
@@ -1525,9 +1539,11 @@ class FloatingPanel(QWidget):
         if screen is None:
             return
         bounds = screen.availableGeometry()
-        x = min(max(self.x(), bounds.left()), bounds.right() - self.width())
-        y = min(max(self.y(), bounds.top()), bounds.bottom() - self.height())
-        self.move(x, y)
+        max_x = bounds.x() + bounds.width() - self.width()
+        max_y = bounds.y() + bounds.height() - self.height()
+        x = min(max(self.x(), bounds.left()), max_x)
+        y = min(max(self.y(), bounds.top()), max_y)
+        self.move(int(x), int(y))
 
     def ensure_topmost(self) -> None:
         """Re-assert z-order. Windows forgets after another window takes focus."""
@@ -1620,6 +1636,14 @@ class FloatingPanel(QWidget):
         source = QPixmap()
         if not source.loadFromData(payload):
             return
+
+        if max(source.width(), source.height()) > 256:
+            source = source.scaled(
+                256,
+                256,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
 
         if len(self._art_cache) >= ARTWORK_CACHE_LIMIT:
             self._art_cache.pop(next(iter(self._art_cache)), None)
@@ -1831,6 +1855,13 @@ class FloatingPanel(QWidget):
             return
         self.seek.setValue(position)
         self._update_elapsed_label(position)
+        if getattr(self, "_active_tab", "") == "lyrics" and self.lyrics_scroll.isVisible():
+            vbar = self.lyrics_scroll.verticalScrollBar()
+            total_dur = self.seek.maximum()
+            if total_dur > 0 and vbar.maximum() > 0:
+                target = int((position / total_dur) * vbar.maximum())
+                if abs(vbar.value() - target) > 4:
+                    vbar.setValue(target)
 
     def _on_length(self, duration: int) -> None:
         self.seek.setRange(0, max(0, duration))
@@ -1974,9 +2005,9 @@ class FloatingPanel(QWidget):
         if key == Qt.Key.Key_Space:
             self.core.toggle()
         elif key == Qt.Key.Key_Left:
-            self.core.seek(max(0, self.seek.value() - 5))
+            self.core.seek(max(0, self.seek.value() - 5000))
         elif key == Qt.Key.Key_Right:
-            self.core.seek(min(self.seek.maximum(), self.seek.value() + 5))
+            self.core.seek(min(self.seek.maximum(), self.seek.value() + 5000))
         elif key == Qt.Key.Key_Up:
             self.core.set_volume(min(100, self.core.volume + 5))
         elif key == Qt.Key.Key_Down:
@@ -1984,7 +2015,7 @@ class FloatingPanel(QWidget):
         elif key == Qt.Key.Key_M:
             self._toggle_mute()
         elif key == Qt.Key.Key_S:
-            self.core.toggle_shuffle()
+            self.core.shuffle_upcoming()
         elif key == Qt.Key.Key_R:
             self.core.cycle_repeat_mode()
         elif key == Qt.Key.Key_L:
@@ -2002,6 +2033,30 @@ class FloatingPanel(QWidget):
                 self.collapse()
         else:
             super().keyPressEvent(event)
+
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        """Scroll wheel anywhere on the panel adjusts volume smoothly, unless over scroll views."""
+        pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+        if self.expanded:
+            child = self.childAt(pos)
+            if child and (
+                child is self.queue_scroll
+                or child is self.lyrics_scroll
+                or self.queue_scroll.isAncestorOf(child)
+                or self.lyrics_scroll.isAncestorOf(child)
+            ):
+                super().wheelEvent(event)
+                return
+
+        delta = event.angleDelta().y()
+        if delta != 0:
+            step = 3 if delta > 0 else -3
+            new_vol = max(0, min(100, int(self.core.volume) + step))
+            self.core.set_volume(new_vol)
+            self.volume.setValue(new_vol)
+            event.accept()
+            return
+        super().wheelEvent(event)
 
     def hotkeys(self) -> List[Tuple[str, Callable[[], None]]]:
         """User-configured (sequence, callback) pairs to register on the window."""

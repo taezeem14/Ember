@@ -21,6 +21,7 @@ from PyQt6.QtCore import (
     QSize,
     Qt,
     QTimer,
+    pyqtSignal,
 )
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import (
@@ -77,6 +78,8 @@ def _rounded_thumb(source: QPixmap, side: int = 44) -> QPixmap:
 class NowPlayingToast(QWidget):
     """Floating desktop toast that slides/fades in when a track changes."""
 
+    clicked = pyqtSignal()
+
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowFlags(
@@ -88,6 +91,7 @@ class NowPlayingToast(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setFixedSize(TOAST_WIDTH + MARGIN * 2, TOAST_HEIGHT + MARGIN * 2)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self._build()
         self.setStyleSheet(toast_stylesheet())
@@ -189,13 +193,44 @@ class NowPlayingToast(QWidget):
         if self._opacity.opacity() <= 0.05:
             self.hide()
 
+    def enterEvent(self, event) -> None:  # noqa: N802
+        """Hovering pauses the auto-dismiss timer and restores full opacity."""
+        self._hide_timer.stop()
+        self._anim.stop()
+        self._opacity.setOpacity(1.0)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        """Mouse leave restarts auto-dismiss countdown."""
+        self._hide_timer.start(TOAST_DISPLAY_MS // 2)
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        """Clicking the toast activates the main window and emits clicked."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+            parent = self.parent()
+            if parent is not None and hasattr(parent, "show"):
+                parent.show()
+                parent.raise_()
+                parent.activateWindow()
+            self._fade_out()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
     def _position_toast(self) -> None:
-        screen = QApplication.primaryScreen()
+        parent = self.parent()
+        screen = None
+        if parent is not None and hasattr(parent, "screen"):
+            screen = parent.screen()
+        if screen is None:
+            screen = QApplication.primaryScreen()
         if screen is not None:
             geom = screen.availableGeometry()
-            x = geom.right() - self.width() - 20
-            y = geom.bottom() - self.height() - 20
-            self.move(x, y)
+            x = geom.x() + geom.width() - self.width() - 20
+            y = geom.y() + geom.height() - self.height() - 20
+            self.move(int(x), int(y))
 
     def reload_theme(self) -> None:
         """Reload stylesheet when theme changes."""
