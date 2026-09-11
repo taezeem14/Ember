@@ -120,3 +120,58 @@ def test_export_favorites_m3u() -> None:
         assert m3u.startswith("#EXTM3U\n")
         assert "#EXTINF:259,Kavinsky - Nightcall" in m3u
         assert "https://www.youtube.com/watch?v=abc1234" in m3u
+
+
+def test_import_favorites_m3u() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        db_file = Path(tmp_dir) / "test.db"
+        storage = EmberStorage(db_file)
+
+        m3u_sample = (
+            "#EXTM3U\n"
+            "#EXTINF:210,Daft Punk - One More Time\n"
+            "https://www.youtube.com/watch?v=FGBhQbmPwH8\n"
+            "#EXTINF:180,Justice - D.A.N.C.E.\n"
+            "https://youtu.be/sy1dYFGkPUE\n"
+        )
+
+        imported = storage.import_favorites_m3u(m3u_sample)
+        assert imported == 2
+        assert storage.is_favorite("FGBhQbmPwH8")
+        assert storage.is_favorite("sy1dYFGkPUE")
+
+        favs = storage.get_favorites()
+        titles = {f.title for f in favs}
+        assert "One More Time" in titles
+        assert "D.A.N.C.E." in titles
+
+        # Invalid/empty m3u
+        assert storage.import_favorites_m3u("") == 0
+
+
+def test_search_history() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        db_file = Path(tmp_dir) / "test.db"
+        storage = EmberStorage(db_file)
+
+        assert storage.get_recent_searches() == []
+
+        storage.record_search("daft punk")
+        storage.record_search("the weeknd")
+        storage.record_search("daft punk")  # deduplicated / bumped
+
+        searches = storage.get_recent_searches(limit=5)
+        assert len(searches) == 2
+        assert searches[0] == "daft punk"
+        assert searches[1] == "the weeknd"
+
+        storage.clear_search_history()
+        assert storage.get_recent_searches() == []
+
+
+def test_storage_close() -> None:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        db_file = Path(tmp_dir) / "test.db"
+        storage = EmberStorage(db_file)
+        storage.add_favorite(Song(video_id="xyz", title="Test", artist="Artist"))
+        storage.close()

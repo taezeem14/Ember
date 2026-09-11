@@ -12,6 +12,7 @@ import logging
 from typing import Dict, List, Optional
 
 from PyQt6.QtCore import QPoint, QSettings, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -227,13 +228,19 @@ class SettingsDialog(QDialog):
         self.btn_export_m3u.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_export_m3u.clicked.connect(self._export_favorites_m3u)
         lib_btn_row.addWidget(self.btn_export_m3u)
-
         self.btn_import_json = QPushButton("Import JSON", self)
         self.btn_import_json.setObjectName("Pill")
         self.btn_import_json.setFixedHeight(26)
         self.btn_import_json.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_import_json.clicked.connect(self._import_favorites_json)
         lib_btn_row.addWidget(self.btn_import_json)
+
+        self.btn_import_m3u = QPushButton("Import M3U", self)
+        self.btn_import_m3u.setObjectName("Pill")
+        self.btn_import_m3u.setFixedHeight(26)
+        self.btn_import_m3u.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_import_m3u.clicked.connect(self._import_favorites_m3u)
+        lib_btn_row.addWidget(self.btn_import_m3u)
 
         layout.addLayout(lib_btn_row)
 
@@ -335,28 +342,34 @@ class SettingsDialog(QDialog):
     def _on_opacity_changed(self, value: int) -> None:
         self.opacity_val_lbl.setText(f"{value}%")
         self.settings.setValue(SETTINGS_OPACITY, value)
+        self.settings.sync()
         self.opacity_changed.emit(value)
 
     def _on_theme_selected(self, theme_name: str) -> None:
         self.settings.setValue(SETTINGS_THEME, theme_name)
+        self.settings.sync()
         Palette.apply_theme(theme_name)
         self.setStyleSheet(settings_stylesheet())
         self.theme_changed.emit(theme_name)
 
     def _on_always_on_top_toggled(self, checked: bool) -> None:
         self.settings.setValue(SETTINGS_ALWAYS_ON_TOP, checked)
+        self.settings.sync()
         self.always_on_top_changed.emit(checked)
 
     def _on_normalize_toggled(self, checked: bool) -> None:
         self.settings.setValue(SETTINGS_NORMALIZE_VOLUME, checked)
+        self.settings.sync()
         self.normalization_changed.emit(checked)
 
     def _on_endless_toggled(self, checked: bool) -> None:
         self.settings.setValue(SETTINGS_AUTO_QUEUE, checked)
+        self.settings.sync()
         self.endless_changed.emit(checked)
 
     def _on_toast_toggled(self, checked: bool) -> None:
         self.settings.setValue(SETTINGS_TOAST_ENABLED, checked)
+        self.settings.sync()
         self.toast_changed.emit(checked)
 
     def _export_favorites_json(self) -> None:
@@ -416,6 +429,25 @@ class SettingsDialog(QDialog):
                 self.lib_status_lbl.setText(f"Import failed: {exc}")
                 self.lib_status_lbl.setVisible(True)
 
+    def _import_favorites_m3u(self) -> None:
+        if not self.storage:
+            self.lib_status_lbl.setText("Storage not available.")
+            self.lib_status_lbl.setVisible(True)
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Favorites (M3U)", "", "M3U Playlist (*.m3u *.m3u8);;All Files (*.*)"
+        )
+        if path:
+            try:
+                with open(path, "r", encoding="utf-8", errors="replace") as f:
+                    data = f.read()
+                count = self.storage.import_favorites_m3u(data)
+                self.lib_status_lbl.setText(f"Imported {count} songs from M3U.")
+                self.lib_status_lbl.setVisible(True)
+            except Exception as exc:
+                self.lib_status_lbl.setText(f"Import failed: {exc}")
+                self.lib_status_lbl.setVisible(True)
+
     def _validate_hotkeys(self) -> None:
         conflicts: List[str] = []
         seen_chords: Dict[str, str] = {}
@@ -423,7 +455,10 @@ class SettingsDialog(QDialog):
             chord = inp.text().strip()
             if not chord:
                 continue
-            if chord in WINDOWS_CONFLICTS:
+            seq = QKeySequence(chord)
+            if seq.isEmpty():
+                conflicts.append(f"'{chord}' (invalid syntax)")
+            elif chord in WINDOWS_CONFLICTS:
                 conflicts.append(f"'{chord}' (Windows system)")
             elif chord in seen_chords:
                 conflicts.append(f"'{chord}' (duplicate)")
