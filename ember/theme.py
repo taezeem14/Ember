@@ -60,6 +60,7 @@ QWidget {
     letter-spacing: 2px;
 }
 #Tagline { color: $faint; font-size: 9px; letter-spacing: 1.5px; font-weight: 600; }
+#Credit { color: $faint; font-size: 9px; letter-spacing: 0.4px; font-weight: 500; font-style: italic; }
 #RibbonTitle { color: $text; font-size: 12px; font-weight: 600; }
 #RibbonArtist { color: $muted; font-size: 11px; }
 #HeroTitle {

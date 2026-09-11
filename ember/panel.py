@@ -42,6 +42,7 @@ from PyQt6.QtWidgets import (
 
 from .config import (
     ANIM_MS,
+    APP_CREDIT,
     APP_NAME,
     APP_TAGLINE,
     ART_COMPACT,
@@ -631,6 +632,7 @@ class FloatingPanel(QWidget):
         self.expanded = False
 
         self._drag_offset: Optional[QPoint] = None
+        self._anchor: Optional[Tuple[str, int, str, int]] = None
         self._scrubbing = False
         self._art_cache: Dict[str, QPixmap] = {}
         self._art_pending: set = set()
@@ -770,9 +772,13 @@ class FloatingPanel(QWidget):
 
         return holder
 
-    def _build_header(self) -> QHBoxLayout:
+    def _build_header(self) -> QVBoxLayout:
+        block = QVBoxLayout()
+        block.setContentsMargins(2, 0, 0, 0)
+        block.setSpacing(1)
+
         row = QHBoxLayout()
-        row.setContentsMargins(2, 0, 0, 0)
+        row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
 
         brand_row = QHBoxLayout()
@@ -801,7 +807,21 @@ class FloatingPanel(QWidget):
         self.collapse_pill.setToolTip("collapse player")
         row.addWidget(self.collapse_pill, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        return row
+        block.addLayout(row)
+
+        # Full-width line — the credit never shares the row with the tagline.
+        # At 392px the tagline + credit together need ~397px and only ~190px exists
+        # beside the status chip and collapse pill, so the credit would clip.
+        credit_row = QHBoxLayout()
+        credit_row.setContentsMargins(22, 0, 0, 0)
+        credit = QLabel(APP_CREDIT, self)
+        credit.setObjectName("Credit")
+        credit.setToolTip("developed by Mayank Malaviya aka AIwolfie")
+        credit_row.addWidget(credit)
+        credit_row.addStretch(1)
+        block.addLayout(credit_row)
+
+        return block
 
     def _build_now_card(self) -> QWidget:
         card = QFrame(self)
@@ -1444,23 +1464,58 @@ class FloatingPanel(QWidget):
     def expand(self) -> None:
         if self.expanded:
             return
+        self._capture_anchor()
         self.expanded = True
         self.ribbon.setVisible(False)
         self.panel.setVisible(True)
-        self._apply_size()
+        self._apply_anchor()
         self._refresh_tab_content()
-        self.clamp_to_screen()
         self.ensure_topmost()
 
     def collapse(self) -> None:
         if not self.expanded:
             return
+        self._capture_anchor()
         self.expanded = False
         self.panel.setVisible(False)
         self.ribbon.setVisible(True)
-        self._apply_size()
-        self.clamp_to_screen()
+        self._apply_anchor()
         self.ensure_topmost()
+
+    def _capture_anchor(self) -> None:
+        """Record which screen edges the panel hugs and how far it sits from them."""
+        screen = self.screen()
+        if screen is None:
+            self._anchor = None
+            return
+        bounds = screen.availableGeometry()
+        left_gap = self.x() - bounds.left()
+        right_gap = bounds.right() - (self.x() + self.width())
+        top_gap = self.y() - bounds.top()
+        bottom_gap = bounds.bottom() - (self.y() + self.height())
+
+        h_edge = "right" if right_gap <= left_gap else "left"
+        v_edge = "bottom" if bottom_gap <= top_gap else "top"
+        self._anchor = (
+            h_edge,
+            max(0, right_gap if h_edge == "right" else left_gap),
+            v_edge,
+            max(0, bottom_gap if v_edge == "bottom" else top_gap),
+        )
+
+    def _apply_anchor(self) -> None:
+        """Resize to the current mode and re-park the panel against its anchored edges."""
+        self._apply_size()
+        screen = self.screen()
+        if self._anchor is None or screen is None:
+            self.clamp_to_screen()
+            return
+        bounds = screen.availableGeometry()
+        h_edge, h_gap, v_edge, v_gap = self._anchor
+        x = bounds.right() - self.width() - h_gap if h_edge == "right" else bounds.left() + h_gap
+        y = bounds.bottom() - self.height() - v_gap if v_edge == "bottom" else bounds.top() + v_gap
+        self.move(int(x), int(y))
+        self.clamp_to_screen()
 
     def toggle_expand(self) -> None:
         self.collapse() if self.expanded else self.expand()
@@ -1512,6 +1567,7 @@ class FloatingPanel(QWidget):
         if self._drag_offset is not None:
             self._drag_offset = None
             self.clamp_to_screen()
+            self._capture_anchor()
 
     # ------------------------------------------------------------ drag and drop
     def dragEnterEvent(self, event) -> None:  # noqa: N802
@@ -1877,6 +1933,7 @@ class FloatingPanel(QWidget):
     def place(self, x: int, y: int) -> None:
         self.move(x, y)
         self.clamp_to_screen()
+        self._capture_anchor()
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
         key = event.key()

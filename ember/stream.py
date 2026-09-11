@@ -20,6 +20,24 @@ log = logging.getLogger(__name__)
 
 WATCH_URL = "https://www.youtube.com/watch?v={0}"
 
+# Conditions yt-dlp cannot recover from by trying again: the extractor needs an
+# authenticated session, so a retry returns the same refusal seconds later.
+PERMANENT_FAILURE_MARKERS = (
+    "sign in to confirm your age",
+    "sign in to confirm you're not a bot",
+    "sign in to confirm you’re not a bot",
+    "this video is age-restricted",
+    "video unavailable",
+    "private video",
+    "members-only",
+)
+
+
+def _is_permanent_failure(exc: BaseException) -> bool:
+    """True when the extractor error will not resolve on a retry."""
+    text = str(exc).lower()
+    return any(marker in text for marker in PERMANENT_FAILURE_MARKERS)
+
 BASE_OPTIONS: Dict[str, Any] = {
     # M4A first. Windows Media Foundation — the backend QMediaPlayer uses on
     # Windows — cannot demux WebM/Opus past the opening cluster, which is what
@@ -58,6 +76,11 @@ class StreamResolver:
                     raise RuntimeError("unexpected response structure from extractor")
             except Exception as exc:
                 last_exc = exc
+                # Age gate and bot check are not transient — retrying just burns
+                # ~10s of dead air before failing anyway. Bail on the first hit.
+                if _is_permanent_failure(exc):
+                    log.warning("stream probe %r blocked permanently: %s", target, exc)
+                    raise
                 if attempt < max_attempts:
                     sleep_sec = 0.5 * (2 ** (attempt - 1))
                     log.warning(
@@ -85,27 +108,38 @@ class StreamResolver:
         except Exception as exc:
             log.error("stream_url failed for %s: %s", video_id, exc)
             return None
-        direct = info.get("url")
-        if direct and isinstance(direct, str):
-            return direct
-
+        # Collect every usable audio format first and pick from the list. The old
+        # code returned info["url"] straight away, which made the M4A preference
+        # below dead code: yt-dlp had already chosen bestaudio for us, and that
+        # choice is often WebM/Opus, which Windows Media Foundation cannot demux
+        # past the opening cluster.
         raw_formats: List[Dict[str, Any]] = info.get("formats") or []
         formats = [
             fmt
             for fmt in raw_formats
             if fmt.get("acodec") not in (None, "none") and fmt.get("url")
         ]
+
+        # Fall back to the top-level entry only when the format list is empty.
+        direct = info.get("url")
         if not formats:
+            if direct and isinstance(direct, str):
+                return direct
             return None
 
-        # Prioritize m4a/mp4 containers for Windows Media Foundation compatibility
-        formats.sort(
-            key=lambda fmt: (
-                fmt.get("ext") != "m4a",
-                not str(fmt.get("acodec", "")).startswith("mp4a"),
+        def _rank(fmt: Dict[str, Any]) -> tuple:
+            ext = str(fmt.get("ext") or "").lower()
+            acodec = str(fmt.get("acodec") or "").lower()
+            is_mp4 = ext == "m4a" or acodec.startswith("mp4a")
+            # WebM/Opus last resort only — WMF cuts playback on those.
+            is_webm = ext == "webm" or acodec.startswith("opus")
+            return (
+                0 if is_mp4 else (2 if is_webm else 1),
                 -(fmt.get("abr") or 0),
+                -(fmt.get("filesize") or 0),
             )
-        )
+
+        formats.sort(key=_rank)
         return formats[0]["url"]
 
     def describe(self, url: str) -> Optional[Song]:

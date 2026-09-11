@@ -1,10 +1,8 @@
 <div align="center">
 
-# Ember 🔥
+# 🎵 Ember 
 
 **The cozy floating desktop music companion that refuses to get in your way.**
-
-*Fork maintained by [Muhammad Taezeem Tariq Matta (@taezeem14)](https://github.com/taezeem14)*
 
 *Slim as a ribbon · Warm as lamplight · Endlessly yours*
 
@@ -17,11 +15,6 @@
 <img src="ember2.png" alt="Ember expanded player" width="440">
 
 </div>
-
----
-
-> **Why this fork exists:**  
-> I'm Taezeem — 15, solo dev living at the intersection of full-stack AI and cybersecurity tools. When I found Mayank's original Ember player, the warm espresso aesthetic and single-source-of-truth palette architecture hooked me instantly. But I needed it bulletproof for 3 AM coding flow states: zero playback starvation, SQLite persistence, instant debounced search, custom theme flavors, and real error recovery so it never drops a beat when the network hiccups. So I upgraded it into a daily driver.
 
 ---
 
@@ -192,9 +185,20 @@ Run the automated test suite locally:
 
 ## 🫡 Credits
 
-- **Original Creator**: **Mayank Malaviya** — Original creator, architect, and copyright holder of the Ember project.
-- **Fork Maintainer & Upgrades**: **Muhammad Taezeem Tariq Matta** ([@taezeem14](https://github.com/taezeem14)) — 19yo solo developer building full-stack AI, high-performance desktop apps, and cybersecurity tools.
-- **License**: Distributed under the terms of the **MIT License**. The original copyright line is preserved word-for-word in [LICENSE](LICENSE).
+### Creator & Maintainer
+
+**Mayank Malaviya aka ([@AIwolfie](https://github.com/AIwolfie))**  
+Original creator, architect, and maintainer of Ember.
+
+### Contributors
+
+**Muhammad Taezeem Tariq Matta** ([@taezeem14](https://github.com/taezeem14))  
+Contributor — development improvements and project upgrades.
+
+### License
+
+Ember is distributed under the **MIT License**.  
+See [LICENSE](LICENSE) for the complete license and copyright notice.
 
 ---
 
