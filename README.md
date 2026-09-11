@@ -4,8 +4,6 @@
 
 **The cozy floating desktop music companion that refuses to get in your way.**
 
-*Fork maintained by [Muhammad Taezeem Tariq Matta (@taezeem14)](https://github.com/taezeem14)*
-
 *Slim as a ribbon · Warm as lamplight · Endlessly yours*
 
 <br/>
@@ -17,11 +15,6 @@
 <img src="ember2.png" alt="Ember expanded player" width="440">
 
 </div>
-
----
-
-> **Why this fork exists:**  
-> I'm Taezeem — 15, solo dev living at the intersection of full-stack AI and cybersecurity tools. When I found Mayank's original Ember player, the warm espresso aesthetic and single-source-of-truth palette architecture hooked me instantly. But I needed it bulletproof for 3 AM coding flow states: zero playback starvation, SQLite persistence, instant debounced search, custom theme flavors, and real error recovery so it never drops a beat when the network hiccups. So I upgraded it into a daily driver.
 
 ---
 
