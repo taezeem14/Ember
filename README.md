@@ -187,7 +187,7 @@ Run the automated test suite locally:
 
 ### Creator & Maintainer
 
-**Mayank Malaviya aka ([@AIwolfie](https://github.com/AIwolfie)) **  
+**Mayank Malaviya aka ([@AIwolfie](https://github.com/AIwolfie))**  
 Original creator, architect, and maintainer of Ember.
 
 ### Contributors
