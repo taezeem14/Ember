@@ -1,6 +1,6 @@
 <div align="center">
 
-# Ember 🔥
+# 🎵 Ember 
 
 **The cozy floating desktop music companion that refuses to get in your way.**
 
