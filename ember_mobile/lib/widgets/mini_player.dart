@@ -83,7 +83,7 @@ class MiniPlayer extends StatelessWidget {
                                 width: 28,
                                 height: 28,
                                 fit: BoxFit.cover,
-                                errorWidget: (_, __, ___) => const FaIcon(FontAwesomeIcons.music, size: 14, color: EmberColors.primaryAmber),
+                                errorWidget: (_, _, _) => const FaIcon(FontAwesomeIcons.music, size: 14, color: EmberColors.primaryAmber),
                               )
                             : const FaIcon(FontAwesomeIcons.music, size: 14, color: EmberColors.primaryAmber),
                       ),

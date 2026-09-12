@@ -302,4 +302,73 @@ class CatalogService {
     }
     return mood.tracks;
   }
+
+  /// Dynamic recommendation system: fetch tracks related to current song
+  static Future<List<Song>> fetchRecommendations(Song song, {int limit = 10}) async {
+    final parsed = <Song>[];
+
+    // 1. If native catalog track, query JioSaavn recommendation API
+    if (!song.id.startsWith('yt_') && !song.id.startsWith('lofi_') && !song.id.startsWith('rain_')) {
+      try {
+        final recoUrl = Uri.parse(
+          'https://www.jiosaavn.com/api.php?__call=reco.getreco&api_version=4&_format=json&_marker=0&ctx=android&songid=${song.id}',
+        );
+        final resp = await http.get(recoUrl, headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(seconds: 4));
+
+        if (resp.statusCode == 200) {
+          final list = jsonDecode(resp.body) as List? ?? [];
+          for (final item in list.take(limit)) {
+            if (item is Map<String, dynamic>) {
+              final title = _unescape(item['song'] ?? item['title']);
+              final artist = _unescape(item['singers'] ?? item['primary_artists'] ?? item['music']);
+              final encrypted = item['encrypted_media_url'] as String?;
+              if (title.isEmpty || encrypted == null || encrypted.isEmpty) continue;
+
+              final streamUrl = decryptMediaUrl(encrypted);
+              if (streamUrl == null || streamUrl.isEmpty) continue;
+
+              final trackId = item['id']?.toString() ?? UniqueKey().toString();
+              if (trackId == song.id) continue;
+
+              final durationSec = int.tryParse('${item['duration']}') ?? 180;
+              final rawArt = item['image'] as String? ?? '';
+              final artworkUrl = rawArt.replaceAll('150x150', '500x500').replaceAll('50x50', '500x500');
+
+              parsed.add(
+                Song(
+                  id: trackId,
+                  title: title,
+                  artist: artist.isNotEmpty ? artist : 'Unknown Artist',
+                  duration: Duration(seconds: durationSec),
+                  artworkUrl: artworkUrl,
+                  streamUrl: streamUrl,
+                ),
+              );
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Recommendation fetch error: $e');
+      }
+    }
+
+    if (parsed.isNotEmpty) {
+      return parsed;
+    }
+
+    // 2. Fallback: query online search for the artist or genre
+    try {
+      final query = song.artist != 'Unknown Artist' && song.artist.isNotEmpty
+          ? song.artist
+          : song.title;
+      final online = await searchOnline(query, limit: limit);
+      final filtered = online.where((s) => s.id != song.id).toList();
+      if (filtered.isNotEmpty) {
+        return filtered;
+      }
+    } catch (_) {}
+
+    // 3. Ambient fallback: Return tracks from same mood or popular tracks
+    return getAllTracks().where((s) => s.id != song.id).take(limit).toList();
+  }
 }

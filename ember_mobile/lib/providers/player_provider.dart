@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/song.dart';
+import '../models/playlist.dart';
 import '../services/audio_handler.dart';
 import '../services/catalog_service.dart';
+import '../services/download_service.dart';
 import '../services/lyrics_service.dart';
 import '../services/storage_service.dart';
+import '../services/youtube_importer_service.dart';
 
 class PlayerProvider extends ChangeNotifier {
   final EmberAudioHandler _audioHandler;
@@ -17,13 +20,24 @@ class PlayerProvider extends ChangeNotifier {
   Duration _duration = Duration.zero;
   double _speed = 1.0;
   bool _isShuffle = false;
+  List<Song> _unshuffledQueue = [];
   String _repeatMode = 'off'; // 'off', 'all', 'one'
-  String _activeTab = 'queue'; // 'queue', 'favorites', 'history', 'lyrics'
+  String _activeTab = 'queue'; // 'queue', 'playlists', 'favorites', 'downloads', 'history'
   String? _activeMood;
   String _searchQuery = '';
   List<Song> _searchResults = [];
   List<Song> _favorites = [];
   List<Song> _history = [];
+  List<Playlist> _playlists = [];
+  List<Song> _downloads = [];
+  List<Song> _recommendations = [];
+  bool _isAutoplayEnabled = true;
+
+  // Equalizer state
+  String _eqPreset = 'Warm Tape';
+  bool _eqEnabled = true;
+  double _bassBoost = 0.35;
+  Map<int, double> _bandGains = {};
 
   LyricsResult _lyrics = LyricsResult.empty;
   bool _isLoadingLyrics = false;
@@ -58,7 +72,17 @@ class PlayerProvider extends ChangeNotifier {
   bool get isSearching => _isSearching;
   List<Song> get favorites => _favorites;
   List<Song> get history => _history;
+  List<Playlist> get playlists => _playlists;
+  List<Song> get downloads => _downloads;
+  List<Song> get recommendations => _recommendations;
+  bool get isAutoplayEnabled => _isAutoplayEnabled;
   int get sleepSecondsRemaining => _sleepSecondsRemaining;
+
+  String get eqPreset => _eqPreset;
+  bool get eqEnabled => _eqEnabled;
+  double get bassBoost => _bassBoost;
+  Map<int, double> get bandGains => _bandGains;
+  EmberAudioHandler get audioHandler => _audioHandler;
 
   LyricsResult get lyrics => _lyrics;
   List<LyricLine> get syncedLyrics => _lyrics.syncedLyrics;
@@ -80,7 +104,25 @@ class PlayerProvider extends ChangeNotifier {
   void _init() {
     _favorites = _storageService.loadFavorites();
     _history = _storageService.loadHistory();
+    _playlists = _storageService.loadPlaylists();
+    _downloads = _storageService.loadDownloads();
     _speed = _storageService.loadPlaybackSpeed();
+    _eqPreset = _storageService.loadEqualizerPreset();
+    _eqEnabled = _storageService.loadEqualizerEnabled();
+    _bassBoost = _storageService.loadBassBoost();
+    _bandGains = _storageService.loadBandGains();
+
+    // Wire up hardware / notification / completion navigation callbacks
+    _audioHandler.setNavigationCallbacks(
+      onSkipNext: () => skipNext(),
+      onSkipPrevious: () => skipPrevious(),
+      onCompleted: () => _handleSongCompleted(),
+    );
+
+    // Apply saved EQ preset & settings
+    _audioHandler.setEqualizerEnabled(_eqEnabled);
+    _audioHandler.setBassBoost(_bassBoost);
+    _audioHandler.applyEqualizerPreset(_eqPreset);
 
     // Seed default queue with warm Lo-Fi tracks
     _queue = List.from(CatalogService.cozyMoods.first.tracks);
@@ -108,6 +150,36 @@ class PlayerProvider extends ChangeNotifier {
     });
   }
 
+  Future<void> _handleSongCompleted() async {
+    if (_repeatMode == 'one') {
+      await _audioHandler.seek(Duration.zero);
+      await _audioHandler.play();
+      return;
+    }
+
+    if (_currentIndex < _queue.length - 1) {
+      await skipNext();
+      return;
+    }
+
+    // At the end of queue
+    if (_repeatMode == 'all' && _queue.isNotEmpty) {
+      _currentIndex = 0;
+      await playSong(_queue[0]);
+      return;
+    }
+
+    // Infinite Autoplay Radio: auto-load and append recommendations
+    if (_isAutoplayEnabled && _recommendations.isNotEmpty) {
+      final nextSong = _recommendations.first;
+      _queue.add(nextSong);
+      _currentIndex = _queue.length - 1;
+      _recommendations.removeAt(0);
+      await playSong(nextSong);
+      return;
+    }
+  }
+
   Future<void> playSong(Song song, {List<Song>? contextQueue}) async {
     if (contextQueue != null) {
       _queue = List.from(contextQueue);
@@ -130,6 +202,7 @@ class PlayerProvider extends ChangeNotifier {
     _duration = song.duration;
     notifyListeners();
     _loadLyrics(song);
+    _loadRecommendations(song);
     await _audioHandler.playSong(song);
   }
 
@@ -145,12 +218,35 @@ class PlayerProvider extends ChangeNotifier {
         _isLoadingLyrics = false;
         notifyListeners();
       }
-    } catch (e) {
+    } catch (_) {
       if (currentSong?.id == song.id) {
         _isLoadingLyrics = false;
         notifyListeners();
       }
     }
+  }
+
+  Future<void> _loadRecommendations(Song song) async {
+    try {
+      final reco = await CatalogService.fetchRecommendations(song, limit: 12);
+      if (currentSong?.id == song.id) {
+        _recommendations = reco;
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> startRadio(Song song) async {
+    final reco = await CatalogService.fetchRecommendations(song, limit: 15);
+    _queue = [song, ...reco];
+    _currentIndex = 0;
+    notifyListeners();
+    await playSong(song);
+  }
+
+  void toggleAutoplay() {
+    _isAutoplayEnabled = !_isAutoplayEnabled;
+    notifyListeners();
   }
 
   Future<void> retryFetchLyrics() async {
@@ -184,6 +280,9 @@ class PlayerProvider extends ChangeNotifier {
     if (nextIdx >= _queue.length) {
       if (_repeatMode == 'all') {
         nextIdx = 0;
+      } else if (_isAutoplayEnabled && _recommendations.isNotEmpty) {
+        await _handleSongCompleted();
+        return;
       } else {
         return; // End of queue
       }
@@ -232,12 +331,20 @@ class PlayerProvider extends ChangeNotifier {
   void toggleShuffle() {
     _isShuffle = !_isShuffle;
     if (_isShuffle && _queue.length > 1) {
+      _unshuffledQueue = List.from(_queue);
       final cur = currentSong;
       _queue.shuffle();
       if (cur != null) {
         _queue.remove(cur);
         _queue.insert(0, cur);
         _currentIndex = 0;
+      }
+    } else if (!_isShuffle && _unshuffledQueue.isNotEmpty) {
+      final cur = currentSong;
+      _queue = List.from(_unshuffledQueue);
+      if (cur != null) {
+        _currentIndex = _queue.indexWhere((s) => s.id == cur.id);
+        if (_currentIndex == -1) _currentIndex = 0;
       }
     }
     notifyListeners();
@@ -261,7 +368,6 @@ class PlayerProvider extends ChangeNotifier {
       playSong(_queue[0]);
     }
 
-    // Dynamically fetch fresh live atmospheric tracks for this cozy mood
     try {
       final liveTracks = await CatalogService.fetchMoodTracks(moodKey);
       if (liveTracks.isNotEmpty && _activeMood == moodKey) {
@@ -293,7 +399,7 @@ class PlayerProvider extends ChangeNotifier {
     _isSearching = true;
     notifyListeners();
 
-    // Debounce 350ms before firing live online music search across global catalog
+    // Debounce 350ms before firing live online music search
     _searchDebounce = Timer(const Duration(milliseconds: 350), () async {
       try {
         final onlineResults = await CatalogService.searchOnline(trimmed);
@@ -311,6 +417,195 @@ class PlayerProvider extends ChangeNotifier {
     });
   }
 
+  // Queue manipulation
+  void playNext(Song song) {
+    final existingIdx = _queue.indexWhere((s) => s.id == song.id);
+    if (existingIdx != -1) {
+      _queue.removeAt(existingIdx);
+      if (existingIdx < _currentIndex) _currentIndex--;
+    }
+    final targetIdx = (_currentIndex + 1).clamp(0, _queue.length);
+    _queue.insert(targetIdx, song);
+    notifyListeners();
+  }
+
+  void addToQueue(Song song) {
+    if (!_queue.any((s) => s.id == song.id)) {
+      _queue.add(song);
+      notifyListeners();
+    }
+  }
+
+  void removeTrackAt(int index) {
+    if (index < 0 || index >= _queue.length) return;
+    _queue.removeAt(index);
+    if (_currentIndex >= _queue.length) {
+      _currentIndex = (_queue.length - 1).clamp(0, _queue.length);
+    } else if (index < _currentIndex) {
+      _currentIndex--;
+    }
+    notifyListeners();
+  }
+
+  void reorderQueue(int oldIndex, int newIndex) {
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final cur = currentSong;
+    final item = _queue.removeAt(oldIndex);
+    _queue.insert(newIndex, item);
+
+    if (cur != null) {
+      _currentIndex = _queue.indexOf(cur);
+    }
+    notifyListeners();
+  }
+
+  void clearQueue() {
+    final cur = currentSong;
+    _queue.clear();
+    if (cur != null) {
+      _queue.add(cur);
+      _currentIndex = 0;
+    } else {
+      _currentIndex = 0;
+    }
+    notifyListeners();
+  }
+
+  // Playlists
+  Future<void> createPlaylist(String title, {String description = ''}) async {
+    final newPlaylist = Playlist(
+      id: 'pl_${DateTime.now().millisecondsSinceEpoch}',
+      title: title.trim().isNotEmpty ? title.trim() : 'New Playlist',
+      description: description,
+      songs: [],
+      createdAt: DateTime.now(),
+    );
+    _playlists.insert(0, newPlaylist);
+    await _storageService.savePlaylists(_playlists);
+    notifyListeners();
+  }
+
+  Future<void> addSongToPlaylist(String playlistId, Song song) async {
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx != -1) {
+      final p = _playlists[idx];
+      if (!p.songs.any((s) => s.id == song.id)) {
+        final updated = p.copyWith(
+          songs: [...p.songs, song],
+          coverUrl: p.coverUrl ?? song.artworkUrl,
+        );
+        _playlists[idx] = updated;
+        await _storageService.savePlaylists(_playlists);
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx != -1) {
+      final p = _playlists[idx];
+      final updated = p.copyWith(
+        songs: p.songs.where((s) => s.id != songId).toList(),
+      );
+      _playlists[idx] = updated;
+      await _storageService.savePlaylists(_playlists);
+      notifyListeners();
+    }
+  }
+
+  Future<void> deletePlaylist(String playlistId) async {
+    _playlists.removeWhere((p) => p.id == playlistId);
+    await _storageService.savePlaylists(_playlists);
+    notifyListeners();
+  }
+
+  Future<void> playPlaylist(Playlist playlist) async {
+    if (playlist.songs.isNotEmpty) {
+      _queue = List.from(playlist.songs);
+      _currentIndex = 0;
+      notifyListeners();
+      await playSong(_queue[0]);
+    }
+  }
+
+  // YouTube Importer
+  Future<String> importYouTubeUrl(String url) async {
+    final res = await YouTubeImporterService.importFromUrl(url);
+    if (res.error != null) {
+      return 'Import failed: ${res.error}';
+    }
+
+    if (res.type == YouTubeImportType.playlist && res.playlist != null) {
+      _playlists.insert(0, res.playlist!);
+      await _storageService.savePlaylists(_playlists);
+      notifyListeners();
+      return 'Imported playlist "${res.playlist!.title}" (${res.playlist!.songs.length} tracks)';
+    } else if (res.type == YouTubeImportType.video && res.song != null) {
+      addToQueue(res.song!);
+      notifyListeners();
+      return 'Imported "${res.song!.title}" to queue';
+    }
+
+    return 'Could not process URL';
+  }
+
+  // Offline Downloads
+  bool isDownloaded(String songId) {
+    return _downloads.any((s) => s.id == songId);
+  }
+
+  Future<String?> downloadAudio(Song song) async {
+    final path = await DownloadService.downloadAudio(song, _storageService);
+    if (path != null) {
+      _downloads = _storageService.loadDownloads();
+      notifyListeners();
+    }
+    return path;
+  }
+
+  Future<String?> downloadVideo(Song song) async {
+    return await DownloadService.downloadVideo(song);
+  }
+
+  Future<void> deleteDownload(String songId) async {
+    _downloads.removeWhere((s) => s.id == songId);
+    await _storageService.saveDownloads(_downloads);
+    notifyListeners();
+  }
+
+  // Equalizer
+  Future<void> setEqualizerPreset(String preset) async {
+    _eqPreset = preset;
+    await _storageService.saveEqualizerPreset(preset);
+    await _audioHandler.applyEqualizerPreset(preset);
+    notifyListeners();
+  }
+
+  Future<void> setEqualizerEnabled(bool enabled) async {
+    _eqEnabled = enabled;
+    await _storageService.saveEqualizerEnabled(enabled);
+    await _audioHandler.setEqualizerEnabled(enabled);
+    notifyListeners();
+  }
+
+  Future<void> setBassBoost(double gain) async {
+    _bassBoost = gain;
+    await _storageService.saveBassBoost(gain);
+    await _audioHandler.setBassBoost(gain);
+    notifyListeners();
+  }
+
+  Future<void> setBandGain(int index, double gain) async {
+    _bandGains[index] = gain;
+    await _storageService.saveBandGains(_bandGains);
+    await _audioHandler.setBandGain(index, gain);
+    notifyListeners();
+  }
+
+  // Favorites & History
   Future<void> toggleFavorite(Song song) async {
     final idx = _favorites.indexWhere((s) => s.id == song.id);
     if (idx >= 0) {
@@ -352,32 +647,6 @@ class PlayerProvider extends ChangeNotifier {
     _sleepTimer?.cancel();
     _sleepTimer = null;
     _sleepSecondsRemaining = 0;
-    notifyListeners();
-  }
-
-  void removeTrackAt(int index) {
-    if (index < 0 || index >= _queue.length) return;
-    _queue.removeAt(index);
-    if (_currentIndex >= _queue.length) {
-      _currentIndex = _queue.length - 1;
-    } else if (index < _currentIndex) {
-      _currentIndex--;
-    }
-    notifyListeners();
-  }
-
-  void reorderQueue(int oldIndex, int newIndex) {
-    if (oldIndex < newIndex) {
-      newIndex -= 1;
-    }
-    final item = _queue.removeAt(oldIndex);
-    _queue.insert(newIndex, item);
-    notifyListeners();
-  }
-
-  void clearQueue() {
-    _queue.clear();
-    _currentIndex = 0;
     notifyListeners();
   }
 

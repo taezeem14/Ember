@@ -6,10 +6,19 @@ import '../providers/player_provider.dart';
 import '../theme/ember_theme.dart';
 import '../widgets/ambient_glow.dart';
 import '../widgets/vinyl_disc.dart';
-import 'lyrics_sheet.dart';
+import '../widgets/synchronized_lyrics_view.dart';
+import 'sound_shaping_sheet.dart';
+import 'track_options_sheet.dart';
 
-class NowPlayingScreen extends StatelessWidget {
+class NowPlayingScreen extends StatefulWidget {
   const NowPlayingScreen({super.key});
+
+  @override
+  State<NowPlayingScreen> createState() => _NowPlayingScreenState();
+}
+
+class _NowPlayingScreenState extends State<NowPlayingScreen> {
+  bool _showLyrics = false;
 
   String _formatDuration(Duration d) {
     final minutes = d.inMinutes;
@@ -69,70 +78,95 @@ class NowPlayingScreen extends StatelessWidget {
                       ),
                     ],
                   ),
+                  // Three Dots Menu -> Opens comprehensive Track Options Bottom Sheet
                   IconButton(
                     icon: const FaIcon(FontAwesomeIcons.ellipsis, size: 20, color: EmberColors.textSecondary),
-                    onPressed: () {},
+                    onPressed: () => TrackOptionsSheet.show(context, song),
                   ),
                 ],
               ),
             ),
 
-            const Spacer(flex: 1),
-
-            // Hero Artwork with Ambient Glow and Vinyl Peek
-            Center(
-              child: AmbientGlow(
-                isPlaying: player.isPlaying,
-                child: SizedBox(
-                  width: 290,
-                  height: 250,
-                  child: Stack(
-                    alignment: Alignment.centerLeft,
-                    children: [
-                      // Vinyl peek peeking from right
-                      Positioned(
-                        right: 0,
-                        child: VinylDisc(
-                          size: 210,
-                          isPlaying: player.isPlaying,
-                        ),
-                      ),
-                      // Square album cover
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: Container(
-                          width: 230,
-                          height: 230,
-                          decoration: BoxDecoration(
-                            color: EmberColors.surfaceContainerHigh,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.5),
-                                blurRadius: 20,
-                                offset: const Offset(4, 4),
-                              ),
-                            ],
-                          ),
-                          child: song.artworkUrl.isNotEmpty
-                              ? CachedNetworkImage(
-                                  imageUrl: song.artworkUrl,
-                                  fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) => const Center(
-                                    child: FaIcon(FontAwesomeIcons.music, size: 48, color: EmberColors.primaryAmber),
-                                  ),
-                                )
-                              : const Center(
-                                  child: FaIcon(FontAwesomeIcons.music, size: 48, color: EmberColors.primaryAmber),
-                                ),
-                        ),
-                      ),
-                    ],
-                  ),
+            // Center Viewport: Animated flip between Album Art / Vinyl Disc and Karaoke Lyrics
+            Expanded(
+              flex: 5,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 350),
+                transitionBuilder: (child, anim) => FadeTransition(
+                  opacity: anim,
+                  child: ScaleTransition(scale: Tween<double>(begin: 0.96, end: 1.0).animate(anim), child: child),
                 ),
+                child: _showLyrics
+                    ? Container(
+                        key: const ValueKey('lyrics_mode'),
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: EmberColors.surfaceContainerLow.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: EmberColors.outlineVariant.withValues(alpha: 0.3)),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: const SynchronizedLyricsView(),
+                        ),
+                      )
+                    : Center(
+                        key: const ValueKey('vinyl_mode'),
+                        child: GestureDetector(
+                          onTap: () => setState(() => _showLyrics = true),
+                          child: AmbientGlow(
+                            isPlaying: player.isPlaying,
+                            child: SizedBox(
+                              width: 290,
+                              height: 250,
+                              child: Stack(
+                                alignment: Alignment.centerLeft,
+                                children: [
+                                  // Vinyl disc peek from right
+                                  Positioned(
+                                    right: 0,
+                                    child: VinylDisc(
+                                      size: 210,
+                                      isPlaying: player.isPlaying,
+                                    ),
+                                  ),
+                                  // Square album cover
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(24),
+                                    child: Container(
+                                      width: 230,
+                                      height: 230,
+                                      decoration: BoxDecoration(
+                                        color: EmberColors.surfaceContainerHigh,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: 0.5),
+                                            blurRadius: 20,
+                                            offset: const Offset(4, 4),
+                                          ),
+                                        ],
+                                      ),
+                                      child: song.artworkUrl.isNotEmpty
+                                          ? CachedNetworkImage(
+                                              imageUrl: song.artworkUrl,
+                                              fit: BoxFit.cover,
+                                              errorWidget: (_, _, _) => const Center(
+                                                child: FaIcon(FontAwesomeIcons.music, size: 48, color: EmberColors.primaryAmber),
+                                              ),
+                                            )
+                                          : const Center(
+                                              child: FaIcon(FontAwesomeIcons.music, size: 48, color: EmberColors.primaryAmber),
+                                            ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
               ),
             ),
-
-            const Spacer(flex: 1),
 
             // Title, Artist, and Favorite
             Padding(
@@ -176,7 +210,7 @@ class NowPlayingScreen extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
             // Scrubber Bar & Timecodes
             Padding(
@@ -187,11 +221,11 @@ class NowPlayingScreen extends StatelessWidget {
                     data: SliderTheme.of(context).copyWith(
                       trackHeight: 4,
                       activeTrackColor: EmberColors.primaryAmber,
-                      inactiveTrackColor: EmberColors.outlineVariant.withOpacity(0.6),
+                      inactiveTrackColor: EmberColors.outlineVariant.withValues(alpha: 0.6),
                       thumbColor: EmberColors.textPrimary,
                       thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                       overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                      overlayColor: EmberColors.primaryAmber.withOpacity(0.2),
+                      overlayColor: EmberColors.primaryAmber.withValues(alpha: 0.2),
                     ),
                     child: Slider(
                       value: total.inMilliseconds > 0
@@ -229,7 +263,7 @@ class NowPlayingScreen extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
 
             // Transport Control Cluster
             Padding(
@@ -249,7 +283,7 @@ class NowPlayingScreen extends StatelessWidget {
                     icon: const FaIcon(FontAwesomeIcons.backwardStep, color: EmberColors.textPrimary, size: 24),
                     onPressed: () => player.skipPrevious(),
                   ),
-                  // Hero 64px circular play/pause button with glowing amber shadow
+                  // Hero 68px circular play/pause button with glowing amber shadow
                   Container(
                     width: 68,
                     height: 68,
@@ -262,7 +296,7 @@ class NowPlayingScreen extends StatelessWidget {
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: EmberColors.primaryAmber.withOpacity(0.45),
+                          color: EmberColors.primaryAmber.withValues(alpha: 0.45),
                           blurRadius: 22,
                           spreadRadius: 2,
                           offset: const Offset(0, 6),
@@ -294,47 +328,27 @@ class NowPlayingScreen extends StatelessWidget {
               ),
             ),
 
-            const Spacer(flex: 1),
-
-            // Lyrics Preview Card (Stitch design)
-            if (song.lyrics != null && song.lyrics!.isNotEmpty)
-              GestureByKey(
-                onTap: () => LyricsSheet.show(context, song),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: EmberColors.surfaceContainerLow.withOpacity(0.8),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: EmberColors.outlineVariant.withOpacity(0.4)),
-                  ),
-                  child: Row(
-                    children: [
-                      const FaIcon(FontAwesomeIcons.alignLeft, size: 16, color: EmberColors.primaryAmber),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          song.lyrics!.split('\n').first,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                color: EmberColors.textSecondary,
-                                fontStyle: FontStyle.italic,
-                              ),
-                        ),
-                      ),
-                      const FaIcon(FontAwesomeIcons.arrowUp, size: 13, color: EmberColors.textMuted),
-                    ],
-                  ),
-                ),
-              ),
-
-            // Bottom Utility Action Pills
+            // Bottom Utility Action Pills (Lyrics Toggle, EQ, Speed, Sleep, Queue)
             Padding(
-              padding: const EdgeInsets.only(left: 20, right: 20, bottom: 16, top: 8),
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16, top: 12),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
+                  // Direct In-Player Lyrics Toggle Pill
+                  _PillAction(
+                    icon: FontAwesomeIcons.alignLeft,
+                    label: _showLyrics ? 'Cover' : 'Lyrics',
+                    active: _showLyrics,
+                    onTap: () => setState(() => _showLyrics = !_showLyrics),
+                  ),
+                  // EQ Sound Shaping Pill
+                  _PillAction(
+                    icon: FontAwesomeIcons.sliders,
+                    label: player.eqPreset.split(' ').first,
+                    active: player.eqEnabled,
+                    onTap: () => SoundShapingSheet.show(context),
+                  ),
+                  // Sleep Timer
                   _PillAction(
                     icon: FontAwesomeIcons.moon,
                     label: player.sleepSecondsRemaining > 0
@@ -343,6 +357,7 @@ class NowPlayingScreen extends StatelessWidget {
                     active: player.sleepSecondsRemaining > 0,
                     onTap: () => _showSleepTimerDialog(context, player),
                   ),
+                  // Playback Speed
                   _PillAction(
                     icon: FontAwesomeIcons.gaugeHigh,
                     label: '${player.speed.toStringAsFixed(player.speed == player.speed.roundToDouble() ? 1 : 2)}x',
@@ -353,6 +368,7 @@ class NowPlayingScreen extends StatelessWidget {
                       player.setSpeed(next);
                     },
                   ),
+                  // Queue Screen
                   _PillAction(
                     icon: FontAwesomeIcons.listUl,
                     label: 'Queue',
@@ -413,22 +429,6 @@ class NowPlayingScreen extends StatelessWidget {
   }
 }
 
-class GestureByKey extends StatelessWidget {
-  final VoidCallback onTap;
-  final Widget child;
-
-  const GestureByKey({super.key, required this.onTap, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: child,
-    );
-  }
-}
-
 class _PillAction extends StatelessWidget {
   final FaIconData icon;
   final String label;
@@ -448,24 +448,25 @@ class _PillAction extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(9999),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
-          color: active ? EmberColors.primaryAmber.withOpacity(0.18) : EmberColors.surfaceContainerLow,
+          color: active ? EmberColors.primaryAmber.withValues(alpha: 0.18) : EmberColors.surfaceContainerLow,
           borderRadius: BorderRadius.circular(9999),
           border: Border.all(
-            color: active ? EmberColors.primaryAmber : EmberColors.outlineVariant.withOpacity(0.5),
+            color: active ? EmberColors.primaryAmber : EmberColors.outlineVariant.withValues(alpha: 0.5),
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            FaIcon(icon, size: 13, color: active ? EmberColors.primaryAmber : EmberColors.textSecondary),
-            const SizedBox(width: 8),
+            FaIcon(icon, size: 12, color: active ? EmberColors.primaryAmber : EmberColors.textSecondary),
+            const SizedBox(width: 5),
             Text(
               label,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: active ? EmberColors.primaryAmber : EmberColors.textSecondary,
                     fontWeight: FontWeight.w600,
+                    fontSize: 11,
                   ),
             ),
           ],
