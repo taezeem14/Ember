@@ -104,6 +104,16 @@ def _artwork_url(item: Dict[str, Any]) -> str:
     return ""
 
 
+COZY_MOODS: Dict[str, tuple[str, str]] = {
+    "lofi": ("☕ Lo-Fi Study", "lofi hip hop chill beats study relax"),
+    "rainy": ("🌧️ Rainy Day", "rainy day cozy acoustic jazz piano"),
+    "jazz": ("🎷 Late Night Jazz", "late night jazz bar muted trumpet noir"),
+    "fireside": ("🕯️ Cozy Fireside", "warm acoustic fingerstyle guitar cozy"),
+    "chillhop": ("🌌 Chillhop", "chillhop instrumental sleepy night beats"),
+    "autumn": ("🍂 Autumn Amber", "warm indie folk acoustic golden hour"),
+}
+
+
 class CatalogSource:
     """Wraps the guest (no-login) YouTube Music client with resilient retries."""
 
@@ -112,8 +122,8 @@ class CatalogSource:
         log.info("catalogue client ready")
 
     # ------------------------------------------------------------------ reads
-    def search(self, query: str, limit: int = 12) -> List[Song]:
-        """Free-text song search with exponential backoff.
+    def search(self, query: str, limit: int = 12, category: str = "songs") -> List[Song]:
+        """Free-text song search with exponential backoff and category filtering.
 
         Raises on persistent transport failure so the UI can notify the user.
         """
@@ -121,8 +131,23 @@ class CatalogSource:
         if not query:
             return []
 
+        # Resolve mood keyword if query is a mood key
+        if query.lower() in COZY_MOODS:
+            query = COZY_MOODS[query.lower()][1]
+
+        # Map UI category to ytmusicapi filter
+        filter_type = "songs"
+        if category in ("artists", "playlists", "albums"):
+            filter_type = category
+        elif category == "community_playlists":
+            filter_type = "community_playlists"
+
         def _do_search() -> List[Dict[str, Any]]:
-            return self.api.search(query, filter="songs", limit=limit)
+            try:
+                return self.api.search(query, filter=filter_type, limit=limit)
+            except Exception:
+                # Fallback to default search if specialized filter returns unexpected payload
+                return self.api.search(query, filter="songs", limit=limit)
 
         raw_results = _with_retry(
             _do_search,
@@ -137,7 +162,7 @@ class CatalogSource:
             if song is not None:
                 found.append(song)
 
-        log.info("search %r -> %d track(s)", query, len(found))
+        log.info("search %r (cat=%s) -> %d track(s)", query, category, len(found))
         return found
 
     def similar(self, seed_id: str, limit: int = 26) -> List[Song]:

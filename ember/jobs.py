@@ -35,11 +35,12 @@ class SearchSignals(_Signals):
 class SearchJob(QRunnable):
     """Off-thread catalogue search job."""
 
-    def __init__(self, catalog: CatalogSource, query: str, limit: int = 12) -> None:
+    def __init__(self, catalog: CatalogSource, query: str, limit: int = 12, category: str = "songs") -> None:
         super().__init__()
         self.catalog = catalog
         self.query = query
         self.limit = limit
+        self.category = category
         self.signals = SearchSignals()
         self.setAutoDelete(True)
         self._cancelled = False
@@ -51,7 +52,7 @@ class SearchJob(QRunnable):
         if self._cancelled:
             return
         try:
-            results = self.catalog.search(self.query, self.limit)
+            results = self.catalog.search(self.query, limit=self.limit, category=self.category)
             if self._cancelled:
                 return
             self.signals.done.emit(self.query, results)

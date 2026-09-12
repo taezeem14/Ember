@@ -56,7 +56,12 @@ SETTINGS_OPACITY = "ui/opacity"
 SETTINGS_REPEAT = "playback/repeat"
 SETTINGS_SPEED = "playback/speed"
 SETTINGS_ALWAYS_ON_TOP = "ui/always_on_top"
+SETTINGS_EQ_PROFILE = "audio/eq_profile"
+SETTINGS_CROSSFEED = "audio/crossfeed"
 DEFAULT_OPACITY = 96
+
+MINI_WIDTH = 280
+MINI_HEIGHT = 44
 
 
 class Palette:

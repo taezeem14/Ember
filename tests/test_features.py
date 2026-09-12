@@ -124,3 +124,82 @@ def test_stream_resolver_is_url_expired() -> None:
     assert StreamResolver.is_url_expired(past_url) is True
 
 
+def test_dominant_color_extractor() -> None:
+    import sys
+    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtGui import QPixmap, QColor
+    from ember.panel import DominantColorExtractor
+    from ember.config import Palette
+
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    # Null pixmap fallback
+    null_pix = QPixmap()
+    assert DominantColorExtractor.extract(null_pix).name() == QColor(Palette.amber).name()
+
+    # Vibrant colored pixmap
+    colored = QPixmap(32, 32)
+    colored.fill(QColor(245, 158, 11))
+    extracted = DominantColorExtractor.extract(colored)
+    assert extracted.red() > 200
+    assert extracted.green() > 100
+
+
+def test_studio_spectrum_visualizer() -> None:
+    import sys
+    from PyQt6.QtWidgets import QApplication
+    from ember.panel import StudioSpectrumVisualizer
+
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    vis = StudioSpectrumVisualizer()
+    vis.set_levels([0.1, 0.5, 0.9])
+    assert len(vis._bands) == 3
+    assert vis._bands[2] == 0.9
+    assert vis._peaks[2] == 0.9
+
+    # Decaying peak
+    vis.set_levels([0.1, 0.2, 0.3])
+    assert vis._bands[2] == 0.3
+    assert vis._peaks[2] <= 0.9
+
+
+def test_sound_shaping_view() -> None:
+    import sys
+    from PyQt6.QtWidgets import QApplication
+    from ember.panel import SoundShapingView
+
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    view = SoundShapingView()
+    emitted_presets = []
+    view.preset_selected.connect(emitted_presets.append)
+
+    view._on_preset("warm")
+    assert emitted_presets == ["warm"]
+    assert view._sliders[0].value() == 3
+
+    view._on_preset("lofi")
+    assert emitted_presets[-1] == "lofi"
+    assert view._sliders[0].value() == 5
+
+    emitted_crossfeed = []
+    view.crossfeed_toggled.connect(emitted_crossfeed.append)
+    view.crossfeed_btn.setChecked(False)
+    view.crossfeed_btn.clicked.emit()
+    assert emitted_crossfeed == [False]
+
+
+def test_cozy_moods_catalog() -> None:
+    from ember.catalog import COZY_MOODS
+
+    assert "lofi" in COZY_MOODS
+    assert "rainy" in COZY_MOODS
+    assert "jazz" in COZY_MOODS
+    assert "fireside" in COZY_MOODS
+    assert "chillhop" in COZY_MOODS
+    assert "autumn" in COZY_MOODS
+    assert len(COZY_MOODS["lofi"]) > 0
+
+
+

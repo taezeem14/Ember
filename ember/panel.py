@@ -11,10 +11,11 @@ tinting, responsive search debouncing, and persistent favorites/history tabs.
 from __future__ import annotations
 
 import logging
+import math
 import sys
 from typing import Callable, Dict, List, Optional, Tuple
 
-from PyQt6.QtCore import QPoint, QRectF, QSettings, QSize, Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import QPoint, QPointF, QRectF, QSettings, QSize, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
     QDesktopServices,
@@ -24,6 +25,7 @@ from PyQt6.QtGui import (
     QPainterPath,
     QPen,
     QPixmap,
+    QRadialGradient,
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -36,6 +38,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QPushButton,
     QScrollArea,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -56,6 +59,8 @@ from .config import (
     SEARCH_DEBOUNCE_MS,
     SETTINGS_ALWAYS_ON_TOP,
     SETTINGS_AUTO_QUEUE,
+    SETTINGS_CROSSFEED,
+    SETTINGS_EQ_PROFILE,
     SETTINGS_HOTKEYS,
     SETTINGS_NORMALIZE_VOLUME,
     SETTINGS_OPACITY,
@@ -88,10 +93,12 @@ from .icons import (
     search_icon,
     settings_icon,
     shuffle_icon,
+    sliders_icon,
     trash_icon,
     volume_high_icon,
     volume_mute_icon,
 )
+from .catalog import COZY_MOODS
 from .jobs import ArtJob, LyricsJob, SearchJob
 from .models import Song
 from .player import PlaybackCore
@@ -486,6 +493,238 @@ class VolumeDial(QWidget):
         painter.end()
 
 
+class DominantColorExtractor:
+    """Extracts dominant vibrant accent color from an album cover QPixmap."""
+
+    @staticmethod
+    def extract(pixmap: QPixmap) -> QColor:
+        if pixmap.isNull() or pixmap.width() <= 1:
+            return QColor(Palette.amber)
+        img = pixmap.toImage().scaled(
+            32, 32, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation
+        )
+        best_color = QColor(Palette.amber)
+        best_score = -1.0
+        for y in range(img.height()):
+            for x in range(img.width()):
+                c = img.pixelColor(x, y)
+                h, s, v, _ = c.getHsv()
+                if v < 40 or v > 240 or s < 50:
+                    continue
+                score = (s / 255.0) * (v / 255.0)
+                if score > best_score:
+                    best_score = score
+                    best_color = c
+        return best_color
+
+
+class NowCardFrame(QFrame):
+    """Card container with dynamic ambient radial glow behind album art."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("NowCard")
+        self._glow_color = QColor(Palette.amber)
+        self._target_color = QColor(Palette.amber)
+        self._curr_r = float(self._glow_color.red())
+        self._curr_g = float(self._glow_color.green())
+        self._curr_b = float(self._glow_color.blue())
+        self._phase = 0.0
+        self._bass_energy = 0.0
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(33)  # ~30 fps
+        self._timer.timeout.connect(self._tick)
+        self._timer.start()
+
+    def set_glow_color(self, color: QColor) -> None:
+        self._target_color = color
+
+    def set_audio_energy(self, level: float) -> None:
+        self._bass_energy = max(0.0, min(1.0, float(level)))
+
+    def _tick(self) -> None:
+        tr, tg, tb = self._target_color.red(), self._target_color.green(), self._target_color.blue()
+        self._curr_r += (tr - self._curr_r) * 0.12
+        self._curr_g += (tg - self._curr_g) * 0.12
+        self._curr_b += (tb - self._curr_b) * 0.12
+        self._phase = (self._phase + 0.04) % (2.0 * math.pi)
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        cx = 44.0
+        cy = 44.0
+        breathe = math.sin(self._phase) * 0.07
+        rad = 75.0 * (1.0 + breathe + self._bass_energy * 0.22)
+
+        grad = QRadialGradient(QPointF(cx, cy), rad)
+        r, g, b = int(self._curr_r), int(self._curr_g), int(self._curr_b)
+        grad.setColorAt(0.0, QColor(r, g, b, 65))
+        grad.setColorAt(0.40, QColor(r, g, b, 28))
+        grad.setColorAt(0.75, QColor(r, g, b, 8))
+        grad.setColorAt(1.0, QColor(r, g, b, 0))
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(grad)
+        painter.drawEllipse(QPointF(cx, cy), rad, rad)
+        painter.end()
+
+
+class StudioSpectrumVisualizer(QWidget):
+    """Reactive frequency equalizer bar canvas with falling peak caps."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setFixedHeight(22)
+        self._bands = [0.0] * 12
+        self._peaks = [0.0] * 12
+        self._peak_vel = [0.0] * 12
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+    def set_levels(self, bands: list[float]) -> None:
+        if len(bands) != len(self._bands):
+            self._bands = [0.0] * len(bands)
+            self._peaks = [0.0] * len(bands)
+            self._peak_vel = [0.0] * len(bands)
+        for i, val in enumerate(bands):
+            self._bands[i] = max(0.0, min(1.0, float(val)))
+            if self._bands[i] >= self._peaks[i]:
+                self._peaks[i] = self._bands[i]
+                self._peak_vel[i] = 0.0
+            else:
+                self._peak_vel[i] += 0.005
+                self._peaks[i] = max(self._bands[i], self._peaks[i] - self._peak_vel[i])
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        w = float(self.width())
+        h = float(self.height())
+        count = len(self._bands)
+        if count == 0:
+            painter.end()
+            return
+        gap = 4.0
+        bar_w = max(4.0, (w - (count - 1) * gap) / count)
+        grad = QLinearGradient(0, 0, 0, h)
+        grad.setColorAt(0.0, QColor(Palette.amber_hi))
+        grad.setColorAt(1.0, QColor(Palette.amber_lo))
+
+        for i in range(count):
+            bx = i * (bar_w + gap)
+            val = self._bands[i]
+            bar_h = max(2.5, val * (h - 4.0))
+            by = h - bar_h
+            painter.setBrush(grad)
+            painter.drawRoundedRect(QRectF(bx, by, bar_w, bar_h), 2.0, 2.0)
+
+            peak_val = self._peaks[i]
+            if peak_val > 0.05:
+                py = max(0.0, h - peak_val * (h - 4.0) - 2.0)
+                painter.setBrush(QColor(Palette.text))
+                painter.drawRoundedRect(QRectF(bx, py, bar_w, 1.5), 0.75, 0.75)
+        painter.end()
+
+
+class SoundShapingView(QWidget):
+    """Equalizer presets and spatial crossfeed acoustic tuning."""
+
+    preset_selected = pyqtSignal(str)
+    crossfeed_toggled = pyqtSignal(bool)
+
+    PRESETS = [
+        ("warm", "Warm Tape"),
+        ("lofi", "Lo-Fi"),
+        ("acoustic", "Acoustic"),
+        ("vocal", "Vocal Air"),
+        ("flat", "Flat"),
+    ]
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("EqualizerDrawer")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(6)
+
+        # Preset pills row
+        p_row = QHBoxLayout()
+        p_row.setSpacing(5)
+        self._preset_btns: dict[str, QPushButton] = {}
+        for key, name in self.PRESETS:
+            btn = QPushButton(name, self)
+            btn.setObjectName("MoodPill")
+            btn.setCheckable(True)
+            btn.setFixedHeight(24)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, k=key: self._on_preset(k))
+            p_row.addWidget(btn)
+            self._preset_btns[key] = btn
+        self._preset_btns["warm"].setChecked(True)
+        layout.addLayout(p_row)
+
+        # 5 Slider Columns
+        sliders_row = QHBoxLayout()
+        sliders_row.setSpacing(10)
+        bands = [("60Hz", 3), ("250Hz", 4), ("1kHz", 1), ("4kHz", -1), ("12kHz", -3)]
+        self._sliders: list[QSlider] = []
+        for freq, val in bands:
+            col = QVBoxLayout()
+            col.setSpacing(2)
+            val_lbl = QLabel(f"{val:+d}dB", self)
+            val_lbl.setObjectName("Clock")
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            slider = QSlider(Qt.Orientation.Vertical, self)
+            slider.setObjectName("EQSlider")
+            slider.setRange(-10, 10)
+            slider.setValue(val)
+            slider.setFixedHeight(72)
+            slider.setCursor(Qt.CursorShape.PointingHandCursor)
+            slider.valueChanged.connect(lambda v, l=val_lbl: l.setText(f"{v:+d}dB"))
+            self._sliders.append(slider)
+            lbl = QLabel(freq, self)
+            lbl.setObjectName("SectionLabel")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            col.addWidget(val_lbl)
+            col.addWidget(slider, 0, Qt.AlignmentFlag.AlignHCenter)
+            col.addWidget(lbl)
+            sliders_row.addLayout(col)
+        layout.addLayout(sliders_row)
+
+        # Crossfeed toggle pill
+        b_row = QHBoxLayout()
+        self.crossfeed_btn = QPushButton(" Spatial Crossfeed (Headphone Comfort)", self)
+        self.crossfeed_btn.setObjectName("Chip")
+        self.crossfeed_btn.setCheckable(True)
+        self.crossfeed_btn.setChecked(True)
+        self.crossfeed_btn.setFixedHeight(24)
+        self.crossfeed_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.crossfeed_btn.clicked.connect(lambda: self.crossfeed_toggled.emit(self.crossfeed_btn.isChecked()))
+        b_row.addWidget(self.crossfeed_btn)
+        b_row.addStretch(1)
+        layout.addLayout(b_row)
+
+    def _on_preset(self, chosen: str) -> None:
+        for k, b in self._preset_btns.items():
+            b.setChecked(k == chosen)
+        preset_values = {
+            "warm": [3, 4, 1, -1, -3],
+            "lofi": [5, 3, -2, -3, -6],
+            "acoustic": [1, 2, 3, 2, 1],
+            "vocal": [-2, -1, 3, 4, 3],
+            "flat": [0, 0, 0, 0, 0],
+        }.get(chosen, [0, 0, 0, 0, 0])
+        for slider, val in zip(self._sliders, preset_values):
+            slider.setValue(val)
+        self.preset_selected.emit(chosen)
+
+
 class QueueRow(QFrame):
     """One line in the queue / library list. Clicking it plays that item."""
 
@@ -829,7 +1068,8 @@ class FloatingPanel(QWidget):
         return block
 
     def _build_now_card(self) -> QWidget:
-        card = QFrame(self)
+        card = NowCardFrame(self)
+        self.now_card = card
         card.setObjectName("NowCard")
 
         column = QVBoxLayout(card)
@@ -869,6 +1109,9 @@ class FloatingPanel(QWidget):
         top.addWidget(self.hero_fav, 0, Qt.AlignmentFlag.AlignTop)
 
         column.addLayout(top)
+
+        self.spectrum_visualizer = StudioSpectrumVisualizer(card)
+        column.addWidget(self.spectrum_visualizer)
 
         seek_row = QHBoxLayout()
         seek_row.setContentsMargins(0, 0, 0, 0)
@@ -950,7 +1193,11 @@ class FloatingPanel(QWidget):
         column.addLayout(transport)
         return card
 
-    def _build_search(self) -> QHBoxLayout:
+    def _build_search(self) -> QVBoxLayout:
+        block = QVBoxLayout()
+        block.setContentsMargins(0, 0, 0, 0)
+        block.setSpacing(6)
+
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
@@ -969,8 +1216,33 @@ class FloatingPanel(QWidget):
         self.find.setCursor(Qt.CursorShape.PointingHandCursor)
         self.find.setToolTip("search catalogue")
         row.addWidget(self.find)
+        block.addLayout(row)
 
-        return row
+        mood_row = QHBoxLayout()
+        mood_row.setContentsMargins(0, 0, 0, 0)
+        mood_row.setSpacing(4)
+        moods = [
+            ("lofi", "☕ Lo-Fi"),
+            ("rainy", "🌧️ Rain"),
+            ("jazz", "🎷 Jazz"),
+            ("fireside", "🕯️ Fire"),
+            ("chillhop", "🌌 Chill"),
+            ("autumn", "🍂 Amber"),
+        ]
+        self._mood_buttons: dict[str, QPushButton] = {}
+        for mood_key, label in moods:
+            btn = QPushButton(label, self)
+            btn.setObjectName("MoodPill")
+            btn.setFixedHeight(22)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setToolTip(f"Curated {label} mood stream")
+            btn.clicked.connect(lambda _, m=mood_key: self._on_quick_mood(m))
+            mood_row.addWidget(btn)
+            self._mood_buttons[mood_key] = btn
+        mood_row.addStretch(1)
+        block.addLayout(mood_row)
+
+        return block
 
     def _build_tabs_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -984,7 +1256,7 @@ class FloatingPanel(QWidget):
         self.tab_queue.setIcon(queue_icon())
         self.tab_queue.setIconSize(QSize(12, 12))
 
-        self.tab_favs = QPushButton(" Favorites", self)
+        self.tab_favs = QPushButton(" Favs", self)
         self.tab_favs.setObjectName("TabButton")
         self.tab_favs.setCheckable(True)
         self.tab_favs.setIcon(heart_icon(True))
@@ -1003,7 +1275,14 @@ class FloatingPanel(QWidget):
         self.tab_lyrics.setIconSize(QSize(12, 12))
         self.tab_lyrics.setToolTip("live song lyrics")
 
-        for tab_btn in (self.tab_queue, self.tab_favs, self.tab_history, self.tab_lyrics):
+        self.tab_sound = QPushButton(" Sound", self)
+        self.tab_sound.setObjectName("TabButton")
+        self.tab_sound.setCheckable(True)
+        self.tab_sound.setIcon(sliders_icon())
+        self.tab_sound.setIconSize(QSize(12, 12))
+        self.tab_sound.setToolTip("equalizer & sound shaping")
+
+        for tab_btn in (self.tab_queue, self.tab_favs, self.tab_history, self.tab_lyrics, self.tab_sound):
             tab_btn.setFixedHeight(26)
             tab_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -1011,6 +1290,7 @@ class FloatingPanel(QWidget):
         row.addWidget(self.tab_favs)
         row.addWidget(self.tab_history)
         row.addWidget(self.tab_lyrics)
+        row.addWidget(self.tab_sound)
         row.addStretch(1)
 
         self.clear_btn = self._ghost_btn(26)
@@ -1024,6 +1304,7 @@ class FloatingPanel(QWidget):
         self.tab_favs.clicked.connect(lambda: self._switch_tab("favorites"))
         self.tab_history.clicked.connect(lambda: self._switch_tab("history"))
         self.tab_lyrics.clicked.connect(lambda: self._switch_tab("lyrics"))
+        self.tab_sound.clicked.connect(lambda: self._switch_tab("sound"))
 
         return row
 
@@ -1076,6 +1357,12 @@ class FloatingPanel(QWidget):
         lyrics_layout.addStretch(1)
         self.lyrics_scroll.setWidget(lyrics_host)
         layout.addWidget(self.lyrics_scroll)
+
+        # Sound shaping / Equalizer view
+        self.sound_view = SoundShapingView(container)
+        self.sound_view.setFixedHeight(QUEUE_VIEW_HEIGHT)
+        self.sound_view.setVisible(False)
+        layout.addWidget(self.sound_view)
 
         return container
 
@@ -1239,6 +1526,11 @@ class FloatingPanel(QWidget):
         core.notice.connect(self._on_notice)
         core.repeat_mode_changed.connect(self._on_repeat_mode_changed)
         core.rate_changed.connect(self._on_rate_changed)
+        core.spectrum_changed.connect(self._on_spectrum_changed)
+
+        if hasattr(self, "sound_view"):
+            self.sound_view.preset_selected.connect(self._on_eq_preset)
+            self.sound_view.crossfeed_toggled.connect(self._on_crossfeed_toggled)
 
         self.ribbon_play.clicked.connect(core.toggle)
         self.ribbon_prev.clicked.connect(core.back)
@@ -1276,9 +1568,13 @@ class FloatingPanel(QWidget):
         self.tab_favs.setChecked(tab == "favorites")
         self.tab_history.setChecked(tab == "history")
         self.tab_lyrics.setChecked(tab == "lyrics")
+        if hasattr(self, "tab_sound"):
+            self.tab_sound.setChecked(tab == "sound")
 
         if tab == "lyrics":
             self.queue_scroll.setVisible(False)
+            if hasattr(self, "sound_view"):
+                self.sound_view.setVisible(False)
             self.lyrics_scroll.setVisible(True)
             curr = self.core.current
             if curr:
@@ -1288,8 +1584,16 @@ class FloatingPanel(QWidget):
             else:
                 self.lyrics_text.setText("No track playing")
                 self.count.setText("lyrics")
+        elif tab == "sound":
+            self.queue_scroll.setVisible(False)
+            self.lyrics_scroll.setVisible(False)
+            if hasattr(self, "sound_view"):
+                self.sound_view.setVisible(True)
+            self.count.setText("sound")
         else:
             self.lyrics_scroll.setVisible(False)
+            if hasattr(self, "sound_view"):
+                self.sound_view.setVisible(False)
             self.queue_scroll.setVisible(True)
             self._refresh_tab_content()
 
@@ -1671,6 +1975,9 @@ class FloatingPanel(QWidget):
             return
         self.ribbon_art.setPixmap(rounded_pixmap(source, ART_COMPACT))
         self.hero_art.setPixmap(rounded_pixmap(source, ART_HERO))
+        if hasattr(self, "now_card"):
+            dominant = DominantColorExtractor.extract(source)
+            self.now_card.set_glow_color(dominant)
 
     # ------------------------------------------------------------------- slots
     def _on_song(self, song: Optional[Song]) -> None:
@@ -1698,6 +2005,8 @@ class FloatingPanel(QWidget):
             fallback_pix = music_icon(Palette.amber_hi).pixmap(24, 24)
             self.ribbon_art.setPixmap(fallback_pix)
             self.hero_art.setPixmap(music_icon(Palette.amber_hi).pixmap(26, 26))
+            if hasattr(self, "now_card"):
+                self.now_card.set_glow_color(QColor(Palette.amber))
             self._request_art(song)
 
         # Show desktop toast if enabled
@@ -1730,6 +2039,33 @@ class FloatingPanel(QWidget):
         self.panel_play.setIcon(pause_icon() if playing else play_icon())
         self.disc.set_spinning(playing)
         self._set_status("playing" if playing else "paused")
+        if not playing and hasattr(self, "spectrum_visualizer"):
+            self.spectrum_visualizer.set_levels([0.0] * 12)
+        if not playing and hasattr(self, "now_card"):
+            self.now_card.set_audio_energy(0.0)
+
+    def _on_spectrum_changed(self, bands: list) -> None:
+        if hasattr(self, "spectrum_visualizer") and self.spectrum_visualizer.isVisible():
+            self.spectrum_visualizer.set_levels(bands)
+        if hasattr(self, "now_card") and bands:
+            bass = sum(bands[:3]) / max(1, len(bands[:3]))
+            self.now_card.set_audio_energy(bass)
+
+    def _on_quick_mood(self, mood: str) -> None:
+        terms = COZY_MOODS.get(mood, [f"{mood} chill beats"])
+        query = terms[0]
+        self.field.setText(query)
+        self._execute_search(query)
+
+    def _on_eq_preset(self, preset: str) -> None:
+        self._set_status(f"EQ: {preset}")
+        self.settings.setValue(SETTINGS_EQ_PROFILE, preset)
+        self.settings.sync()
+
+    def _on_crossfeed_toggled(self, enabled: bool) -> None:
+        self._set_status("crossfeed on" if enabled else "crossfeed off")
+        self.settings.setValue(SETTINGS_CROSSFEED, enabled)
+        self.settings.sync()
 
     # ------------------------------------------------------------- lyrics slots
     def _fetch_lyrics(self, song: Song) -> None:

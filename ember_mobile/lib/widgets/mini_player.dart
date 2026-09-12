@@ -1,0 +1,162 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../providers/player_provider.dart';
+import '../screens/now_playing_screen.dart';
+import '../theme/ember_theme.dart';
+import 'vinyl_disc.dart';
+
+class MiniPlayer extends StatelessWidget {
+  const MiniPlayer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlayerProvider>();
+    final song = player.currentSong;
+
+    if (song == null) {
+      return const SizedBox.shrink();
+    }
+
+    final double progress = player.duration.inMilliseconds > 0
+        ? (player.position.inMilliseconds / player.duration.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          PageRouteBuilder(
+            pageBuilder: (context, anim, secAnim) => const NowPlayingScreen(),
+            transitionsBuilder: (context, anim, secAnim, child) {
+              const begin = Offset(0.0, 1.0);
+              const end = Offset.zero;
+              const curve = Curves.easeOutCubic;
+              final tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+              return SlideTransition(position: anim.drive(tween), child: child);
+            },
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: EmberColors.surfaceContainerLow.withOpacity(0.95),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: EmberColors.outlineVariant.withOpacity(0.6)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 2px top progress bar
+            LinearProgressIndicator(
+              value: progress,
+              minHeight: 2,
+              backgroundColor: Colors.white.withOpacity(0.05),
+              valueColor: const AlwaysStoppedAnimation<Color>(EmberColors.primaryAmber),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  // Vinyl disc with art peek
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      VinylDisc(
+                        size: 42,
+                        isPlaying: player.isPlaying,
+                      ),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(21),
+                        child: song.artworkUrl.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: song.artworkUrl,
+                                width: 28,
+                                height: 28,
+                                fit: BoxFit.cover,
+                                errorWidget: (_, __, ___) => const Icon(Icons.music_note, size: 16, color: EmberColors.primaryAmber),
+                              )
+                            : const Icon(Icons.music_note, size: 16, color: EmberColors.primaryAmber),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+                  // Title and Artist
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          song.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                color: EmberColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          song.artist,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: EmberColors.textMuted,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Favorite Heart
+                  IconButton(
+                    icon: Icon(
+                      player.isFavorite(song.id) ? Icons.favorite : Icons.favorite_border,
+                      size: 20,
+                      color: player.isFavorite(song.id) ? EmberColors.primaryAmber : EmberColors.textMuted,
+                    ),
+                    onPressed: () => player.toggleFavorite(song),
+                    splashRadius: 20,
+                  ),
+                  // Circular Play/Pause button
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: EmberColors.primaryAmber,
+                    ),
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: Icon(
+                        player.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                        color: EmberColors.obsidianBase,
+                        size: 24,
+                      ),
+                      onPressed: () => player.togglePlay(),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  // Skip Next
+                  IconButton(
+                    icon: const Icon(Icons.skip_next_rounded, size: 24, color: EmberColors.textSecondary),
+                    onPressed: () => player.skipNext(),
+                    splashRadius: 20,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

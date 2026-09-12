@@ -225,7 +225,7 @@ QWidget {
     border-radius: 13px;
     color: $muted;
     font-size: 10px;
-    padding: 2px 10px;
+    padding: 2px 7px;
     font-weight: 600;
 }
 #TabButton:hover {
@@ -304,9 +304,64 @@ QWidget {
     background: rgba($text_rgb, 0.08);
 }
 
+/* ------------------------------------------------------------------ discovery & moods */
+#MoodPill {
+    background: rgba($text_rgb, 0.04);
+    border: 1px solid $line;
+    border-radius: 11px;
+    color: $muted;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+}
+#MoodPill:hover {
+    color: $amber_hi;
+    border: 1px solid rgba($amber_rgb, 0.40);
+    background: rgba($amber_rgb, 0.12);
+}
+#MoodPill:checked {
+    background: rgba($amber_rgb, 0.22);
+    border: 1px solid rgba($amber_rgb, 0.50);
+    color: $amber_hi;
+}
+
+/* ------------------------------------------------------------------ equalizer & sound */
+#EqualizerDrawer {
+    background: rgba($text_rgb, 0.03);
+    border: 1px solid $line;
+    border-radius: 16px;
+    padding: 8px;
+}
+#EQSlider::groove:vertical {
+    width: 4px;
+    background: $line;
+    border-radius: 2px;
+}
+#EQSlider::sub-page:vertical {
+    background: $line;
+    border-radius: 2px;
+}
+#EQSlider::add-page:vertical {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $amber_hi, stop:1 $amber_lo);
+    border-radius: 2px;
+}
+#EQSlider::handle:vertical {
+    background: $amber_hi;
+    height: 12px;
+    width: 12px;
+    margin-left: -4px;
+    margin-right: -4px;
+    border-radius: 6px;
+    border: 2px solid $surface;
+}
+#EQSlider::handle:vertical:hover {
+    background: #FFFFFF;
+}
+
 /* ------------------------------------------------------------------ queue */
 #QueueScroll { background: transparent; border: none; }
 #QueueScroll > QWidget > QWidget { background: transparent; }
+#QueueScroll > QWidget { background: transparent; }
 QScrollBar:vertical { background: transparent; width: 6px; margin: 2px 0; }
 QScrollBar::handle:vertical { background: $line; border-radius: 3px; min-height: 28px; }
 QScrollBar::handle:vertical:hover { background: $faint; }
