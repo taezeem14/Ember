@@ -23,7 +23,7 @@ class PlayerProvider extends ChangeNotifier {
   List<Song> _unshuffledQueue = [];
   String _repeatMode = 'off'; // 'off', 'all', 'one'
   String _activeTab = 'queue'; // 'queue', 'playlists', 'favorites', 'downloads', 'history'
-  String? _activeMood;
+  String _activeCategory = 'trending';
   String _searchQuery = '';
   List<Song> _searchResults = [];
   List<Song> _favorites = [];
@@ -66,7 +66,8 @@ class PlayerProvider extends ChangeNotifier {
   bool get isShuffle => _isShuffle;
   String get repeatMode => _repeatMode;
   String get activeTab => _activeTab;
-  String? get activeMood => _activeMood;
+  String get activeCategory => _activeCategory;
+  String? get activeMood => _activeCategory;
   String get searchQuery => _searchQuery;
   List<Song> get searchResults => _searchResults;
   bool get isSearching => _isSearching;
@@ -124,9 +125,17 @@ class PlayerProvider extends ChangeNotifier {
     _audioHandler.setBassBoost(_bassBoost);
     _audioHandler.applyEqualizerPreset(_eqPreset);
 
-    // Seed default queue with warm Lo-Fi tracks
-    _queue = List.from(CatalogService.cozyMoods.first.tracks);
-    _searchResults = CatalogService.getAllTracks();
+    // Restore previous queue from history or offline downloads, avoiding mock placeholder tracks
+    if (_history.isNotEmpty) {
+      _queue = List.from(_history.take(20));
+    } else if (_downloads.isNotEmpty) {
+      _queue = List.from(_downloads);
+    } else {
+      _queue = [];
+    }
+
+    // Load initial trending discovery tracks
+    _loadInitialDiscoveryTracks();
 
     // Listen to player streams
     _posSub = _audioHandler.player.positionStream.listen((pos) {
@@ -355,32 +364,48 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> selectMood(String moodKey) async {
-    _activeMood = moodKey;
-    final found = CatalogService.cozyMoods.firstWhere(
-      (m) => m.key == moodKey,
-      orElse: () => CatalogService.cozyMoods.first,
-    );
-    _queue = List.from(found.tracks);
-    _currentIndex = 0;
+  Future<void> _loadInitialDiscoveryTracks() async {
+    _activeCategory = 'trending';
+    _isSearching = true;
     notifyListeners();
-    if (_queue.isNotEmpty) {
-      playSong(_queue[0]);
-    }
-
     try {
-      final liveTracks = await CatalogService.fetchMoodTracks(moodKey);
-      if (liveTracks.isNotEmpty && _activeMood == moodKey) {
-        final cur = currentSong;
-        if (cur != null) {
-          _queue = [cur, ...liveTracks.where((t) => t.id != cur.id)];
-        } else {
-          _queue = liveTracks;
+      final trending = await CatalogService.fetchTrendingTracks();
+      if (trending.isNotEmpty) {
+        _searchResults = trending;
+        if (_queue.isEmpty) {
+          _queue = List.from(trending);
         }
-        notifyListeners();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Error loading initial trending tracks: $e');
+    } finally {
+      _isSearching = false;
+      notifyListeners();
+    }
   }
+
+  Future<void> selectCategory(String categoryKey) async {
+    _activeCategory = categoryKey;
+    _isSearching = true;
+    notifyListeners();
+    try {
+      final liveTracks = await CatalogService.fetchCategoryTracks(categoryKey);
+      if (liveTracks.isNotEmpty && _activeCategory == categoryKey) {
+        _searchResults = liveTracks;
+        if (_queue.isEmpty) {
+          _queue = List.from(liveTracks);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error selecting category: $e');
+    } finally {
+      _isSearching = false;
+      notifyListeners();
+    }
+  }
+
+  // Backward-compatible alias
+  Future<void> selectMood(String moodKey) => selectCategory(moodKey);
 
   void search(String query) {
     _searchQuery = query;
@@ -482,25 +507,15 @@ class PlayerProvider extends ChangeNotifier {
       songs: [],
       createdAt: DateTime.now(),
     );
-    _playlists.insert(0, newPlaylist);
-    await _storageService.savePlaylists(_playlists);
+    await _storageService.savePlaylist(newPlaylist);
+    _playlists = _storageService.loadPlaylists();
     notifyListeners();
   }
 
   Future<void> addSongToPlaylist(String playlistId, Song song) async {
-    final idx = _playlists.indexWhere((p) => p.id == playlistId);
-    if (idx != -1) {
-      final p = _playlists[idx];
-      if (!p.songs.any((s) => s.id == song.id)) {
-        final updated = p.copyWith(
-          songs: [...p.songs, song],
-          coverUrl: p.coverUrl ?? song.artworkUrl,
-        );
-        _playlists[idx] = updated;
-        await _storageService.savePlaylists(_playlists);
-        notifyListeners();
-      }
-    }
+    await _storageService.addSongToPlaylist(playlistId, song);
+    _playlists = _storageService.loadPlaylists();
+    notifyListeners();
   }
 
   Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
@@ -510,15 +525,15 @@ class PlayerProvider extends ChangeNotifier {
       final updated = p.copyWith(
         songs: p.songs.where((s) => s.id != songId).toList(),
       );
-      _playlists[idx] = updated;
-      await _storageService.savePlaylists(_playlists);
+      await _storageService.savePlaylist(updated);
+      _playlists = _storageService.loadPlaylists();
       notifyListeners();
     }
   }
 
   Future<void> deletePlaylist(String playlistId) async {
-    _playlists.removeWhere((p) => p.id == playlistId);
-    await _storageService.savePlaylists(_playlists);
+    await _storageService.deletePlaylist(playlistId);
+    _playlists = _storageService.loadPlaylists();
     notifyListeners();
   }
 
@@ -539,17 +554,16 @@ class PlayerProvider extends ChangeNotifier {
     }
 
     if (res.type == YouTubeImportType.playlist && res.playlist != null) {
-      _playlists.insert(0, res.playlist!);
-      await _storageService.savePlaylists(_playlists);
+      await _storageService.savePlaylist(res.playlist!);
+      _playlists = _storageService.loadPlaylists();
       notifyListeners();
-      return 'Imported playlist "${res.playlist!.title}" (${res.playlist!.songs.length} tracks)';
+      return 'Imported & saved "${res.playlist!.title}" (${res.playlist!.songs.length} tracks)';
     } else if (res.type == YouTubeImportType.video && res.song != null) {
       addToQueue(res.song!);
       notifyListeners();
       return 'Imported "${res.song!.title}" to queue';
     }
-
-    return 'Could not process URL';
+    return 'Import failed';
   }
 
   // Offline Downloads

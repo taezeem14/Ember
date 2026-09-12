@@ -106,11 +106,11 @@ class TrackOptionsSheet extends StatelessWidget {
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(backgroundColor: EmberColors.primaryAmber),
                             onPressed: () {
-                              player.createPlaylist('My Cozy Favorites');
+                              player.createPlaylist('My Favorites');
                               Navigator.pop(ctx);
                             },
                             icon: const FaIcon(FontAwesomeIcons.plus, size: 14, color: EmberColors.obsidianBase),
-                            label: const Text('Create "My Cozy Favorites"', style: TextStyle(color: EmberColors.obsidianBase, fontWeight: FontWeight.bold)),
+                            label: const Text('Create "My Favorites"', style: TextStyle(color: EmberColors.obsidianBase, fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),

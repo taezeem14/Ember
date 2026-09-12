@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' hide Playlist;
 import '../models/song.dart';
 import '../models/playlist.dart';
@@ -35,7 +37,7 @@ class YouTubeImporterService {
     try {
       return VideoId.parseVideoId(url.trim());
     } catch (_) {
-      final regExp = RegExp(r'(?:v=|\/)([0-9A-Za-z_-]{11}).*');
+      final regExp = RegExp(r'(?:v=|\/)([0-9A-Za-z_-]{11})');
       final match = regExp.firstMatch(url);
       return match?.group(1);
     }
@@ -49,6 +51,28 @@ class YouTubeImporterService {
       final match = regExp.firstMatch(url);
       return match?.group(1);
     }
+  }
+
+  static Duration parseDurationText(String? text) {
+    if (text == null || text.trim().isEmpty) {
+      return const Duration(minutes: 3, seconds: 30);
+    }
+    final parts = text.trim().split(':');
+    try {
+      if (parts.length == 3) {
+        return Duration(
+          hours: int.parse(parts[0]),
+          minutes: int.parse(parts[1]),
+          seconds: int.parse(parts[2]),
+        );
+      } else if (parts.length == 2) {
+        return Duration(
+          minutes: int.parse(parts[0]),
+          seconds: int.parse(parts[1]),
+        );
+      }
+    } catch (_) {}
+    return const Duration(minutes: 3, seconds: 30);
   }
 
   /// Resolve direct playable audio stream URL from a YouTube video ID
@@ -66,47 +90,161 @@ class YouTubeImporterService {
     }
   }
 
-  /// Import either a video or a playlist from a YouTube URL
+  /// NewPipe-style extraction for YouTube Mixes (list=RD..., list=RDMM, radio mixes)
+  static Future<Playlist?> _importYouTubeMix(String? videoId, String playlistId) async {
+    try {
+      final body = jsonEncode({
+        "context": {
+          "client": {
+            "clientName": "WEB",
+            "clientVersion": "2.20240101.00.00",
+            "hl": "en",
+            "gl": "US"
+          }
+        },
+        if (videoId != null && videoId.isNotEmpty) "videoId": videoId,
+        "playlistId": playlistId
+      });
+
+      final resp = await http.post(
+        Uri.parse('https://www.youtube.com/youtubei/v1/next?prettyPrint=false'),
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        body: body,
+      ).timeout(const Duration(seconds: 8));
+
+      if (resp.statusCode == 200) {
+        final json = jsonDecode(resp.body) as Map<String, dynamic>;
+        final plData = json['contents']?['twoColumnWatchNextResults']?['playlist']?['playlist'];
+        if (plData == null) return null;
+
+        final title = plData['title'] as String? ?? 'YouTube Mix';
+        final author = plData['ownerName']?['simpleText'] as String? ?? 'YouTube Mix';
+        final contents = plData['contents'] as List? ?? [];
+        final songs = <Song>[];
+
+        for (final item in contents.take(50)) {
+          final renderer = item['playlistPanelVideoRenderer'];
+          if (renderer != null) {
+            final vId = renderer['videoId'] as String?;
+            if (vId == null || vId.isEmpty) continue;
+
+            final trackTitle = renderer['title']?['simpleText'] as String? ??
+                renderer['title']?['runs']?[0]?['text'] as String? ??
+                'YouTube Track';
+            final trackAuthor = renderer['shortBylineText']?['runs']?[0]?['text'] as String? ?? author;
+            final durText = renderer['lengthText']?['simpleText'] as String?;
+            final thumbs = renderer['thumbnail']?['thumbnails'] as List?;
+            final art = (thumbs != null && thumbs.isNotEmpty)
+                ? thumbs.last['url'] as String? ?? 'https://i.ytimg.com/vi/$vId/hqdefault.jpg'
+                : 'https://i.ytimg.com/vi/$vId/hqdefault.jpg';
+
+            songs.add(
+              Song(
+                id: 'yt_$vId',
+                title: trackTitle,
+                artist: trackAuthor,
+                duration: parseDurationText(durText),
+                artworkUrl: art,
+                streamUrl: 'https://www.youtube.com/watch?v=$vId',
+              ),
+            );
+          }
+        }
+
+        if (songs.isNotEmpty) {
+          return Playlist(
+            id: 'yt_mix_$playlistId',
+            title: title,
+            description: 'YouTube Mix • ${songs.length} tracks',
+            songs: songs,
+            createdAt: DateTime.now(),
+            coverUrl: songs.first.artworkUrl,
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error importing YouTube Mix via next endpoint: $e');
+    }
+    return null;
+  }
+
+  /// Import either a video, standard playlist, or Mix from any YouTube / YouTube Music URL
   static Future<YouTubeImportResult> importFromUrl(String url) async {
     final clean = url.trim();
     final type = detectUrlType(clean);
 
     if (type == YouTubeImportType.playlist) {
       final playlistId = extractPlaylistId(clean);
+      final videoId = extractVideoId(clean);
+
       if (playlistId == null) {
         return const YouTubeImportResult(type: YouTubeImportType.unknown, error: 'Invalid YouTube Playlist URL');
       }
 
+      // 1. If this is a YouTube Mix (RD..., RDMM, RDEM, RDCLAK...) or contains a video context, try Mix parser first
+      if (playlistId.startsWith('RD') || playlistId.startsWith('UL') || clean.contains('list=RD')) {
+        final mixPlaylist = await _importYouTubeMix(videoId, playlistId);
+        if (mixPlaylist != null && mixPlaylist.songs.isNotEmpty) {
+          return YouTubeImportResult(type: YouTubeImportType.playlist, playlist: mixPlaylist);
+        }
+      }
+
+      // 2. Standard user or channel playlist via youtube_explode_dart
       final yt = YoutubeExplode();
       try {
-        final ytPlaylist = await yt.playlists.get(playlistId);
+        String title = 'YouTube Playlist';
+        String description = 'Imported YouTube Playlist';
+        String? coverUrl;
+
+        try {
+          final ytPlaylist = await yt.playlists.get(playlistId);
+          if (ytPlaylist.title.isNotEmpty) title = ytPlaylist.title;
+          description = ytPlaylist.description;
+        } catch (_) {}
+
         final songs = <Song>[];
+        try {
+          await for (final video in yt.playlists.getVideos(playlistId).take(50)) {
+            final trackId = 'yt_${video.id.value}';
+            final artwork = video.thumbnails.highResUrl.isNotEmpty
+                ? video.thumbnails.highResUrl
+                : video.thumbnails.standardResUrl;
 
-        await for (final video in yt.playlists.getVideos(playlistId).take(50)) {
-          final trackId = 'yt_${video.id.value}';
-          final artwork = video.thumbnails.highResUrl.isNotEmpty
-              ? video.thumbnails.highResUrl
-              : video.thumbnails.standardResUrl;
-
-          songs.add(
-            Song(
-              id: trackId,
-              title: video.title,
-              artist: video.author,
-              duration: video.duration ?? const Duration(minutes: 3),
-              artworkUrl: artwork,
-              streamUrl: 'https://www.youtube.com/watch?v=${video.id.value}',
-            ),
-          );
+            songs.add(
+              Song(
+                id: trackId,
+                title: video.title,
+                artist: video.author,
+                duration: video.duration ?? const Duration(minutes: 3, seconds: 30),
+                artworkUrl: artwork,
+                streamUrl: 'https://www.youtube.com/watch?v=${video.id.value}',
+              ),
+            );
+          }
+        } catch (e) {
+          debugPrint('getVideos fallback triggered: $e');
         }
 
+        // 3. If youtube_explode yielded no videos, fallback to YouTube next API
+        if (songs.isEmpty) {
+          final fallbackMix = await _importYouTubeMix(videoId, playlistId);
+          if (fallbackMix != null && fallbackMix.songs.isNotEmpty) {
+            return YouTubeImportResult(type: YouTubeImportType.playlist, playlist: fallbackMix);
+          }
+          return const YouTubeImportResult(type: YouTubeImportType.playlist, error: 'No playable tracks found in playlist');
+        }
+
+        coverUrl = songs.isNotEmpty ? songs.first.artworkUrl : null;
         final playlist = Playlist(
-          id: 'yt_pl_${ytPlaylist.id.value}',
-          title: ytPlaylist.title.isNotEmpty ? ytPlaylist.title : 'YouTube Playlist',
-          description: ytPlaylist.description,
+          id: 'yt_pl_$playlistId',
+          title: title,
+          description: description,
           songs: songs,
           createdAt: DateTime.now(),
-          coverUrl: songs.isNotEmpty ? songs.first.artworkUrl : null,
+          coverUrl: coverUrl,
         );
 
         return YouTubeImportResult(type: YouTubeImportType.playlist, playlist: playlist);
@@ -133,7 +271,7 @@ class YouTubeImporterService {
           id: 'yt_${video.id.value}',
           title: video.title,
           artist: video.author,
-          duration: video.duration ?? const Duration(minutes: 3),
+          duration: video.duration ?? const Duration(minutes: 3, seconds: 30),
           artworkUrl: artwork,
           streamUrl: streamUrl,
         );

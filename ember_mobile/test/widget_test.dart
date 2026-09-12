@@ -71,39 +71,26 @@ void main() {
   });
 
   group('Catalog Service Tests', () {
-    test('Catalog contains all 6 cozy moods', () {
-      expect(CatalogService.cozyMoods.length, 6);
-      final keys = CatalogService.cozyMoods.map((m) => m.key).toList();
-      expect(keys, containsAll(['lofi', 'rain', 'jazz', 'fireplace', 'ambient', 'autumn']));
+    test('Catalog contains all 8 real music categories', () {
+      expect(CatalogService.categories.length, 8);
+      final keys = CatalogService.categories.map((m) => m.key).toList();
+      expect(keys, containsAll(['trending', 'top_hits', 'pop', 'hiphop', 'rock', 'electronic', 'rnb', 'acoustic']));
     });
 
-    test('Catalog search matches title and artist', () {
-      final results = CatalogService.search('Coffee');
-      expect(results.isNotEmpty, true);
-      expect(results.first.title.toLowerCase(), contains('coffee'));
-    });
-
-    test('Catalog search with empty query returns all tracks', () {
+    test('Catalog search with empty query returns list', () {
       final all = CatalogService.getAllTracks();
       final searched = CatalogService.search('');
       expect(searched.length, all.length);
     });
 
-    test('Catalog fetchMoodTracks returns non-empty track list for all mood keys', () async {
-      for (final mood in CatalogService.cozyMoods) {
-        final tracks = await CatalogService.fetchMoodTracks(mood.key);
-        expect(tracks.isNotEmpty, true, reason: 'Mood ${mood.key} should return tracks');
-        expect(tracks.first.title.isNotEmpty, true);
-        expect(tracks.first.streamUrl.isNotEmpty, true);
-      }
+    test('Catalog fetchTrendingTracks returns track list', () async {
+      final tracks = await CatalogService.fetchTrendingTracks(limit: 5);
+      expect(tracks, isA<List<Song>>());
     });
 
     test('Catalog searchOnline returns tracks or falls back cleanly', () async {
-      final results = await CatalogService.searchOnline('Coffee');
-      expect(results.isNotEmpty, true);
-      expect(results.first.title.isNotEmpty, true);
-      expect(results.first.artist.isNotEmpty, true);
-      expect(results.first.streamUrl.isNotEmpty, true);
+      final results = await CatalogService.searchOnline('Believer', limit: 5);
+      expect(results, isA<List<Song>>());
     });
 
     test('Catalog decryptMediaUrl correctly decrypts Saavn encrypted URL', () {

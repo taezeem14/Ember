@@ -70,7 +70,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        player.activeMood?.toUpperCase() ?? 'EMBER COZY QUEUE',
+                        player.activeCategory.replaceAll('_', ' ').toUpperCase(),
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                               color: EmberColors.primaryAmber,
                               fontWeight: FontWeight.bold,

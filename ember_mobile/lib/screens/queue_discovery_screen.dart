@@ -213,7 +213,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                             ),
                       ),
                       Text(
-                        'COZY AUDIO COMPANION',
+                        'MUSIC PLAYER & DISCOVERY',
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               color: EmberColors.textMuted,
                               letterSpacing: 1.0,
@@ -258,7 +258,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                         controller: _searchController,
                         style: const TextStyle(color: EmberColors.textPrimary, fontSize: 13),
                         decoration: const InputDecoration(
-                          hintText: 'Search songs, artists, albums, or cozy vibes...',
+                          hintText: 'Search songs, artists, albums, or paste YouTube link...',
                           hintStyle: TextStyle(color: EmberColors.textMuted, fontSize: 13),
                           border: InputBorder.none,
                           isDense: true,
@@ -291,22 +291,22 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
               ),
             ),
 
-            // Cozy Moods Quick Picks Horizontal Bar
+            // Music Categories Quick Picks Horizontal Bar
             SizedBox(
               height: 42,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
-                itemCount: CatalogService.cozyMoods.length,
+                itemCount: CatalogService.categories.length,
                 separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (context, i) {
-                  final mood = CatalogService.cozyMoods[i];
-                  final isSelected = player.activeMood == mood.key;
+                  final cat = CatalogService.categories[i];
+                  final isSelected = player.activeCategory == cat.key;
                   return InkWell(
-                    onTap: () => player.selectMood(mood.key),
+                    onTap: () => player.selectCategory(cat.key),
                     borderRadius: BorderRadius.circular(9999),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                       decoration: BoxDecoration(
                         color: isSelected
                             ? EmberColors.primaryAmber.withValues(alpha: 0.2)
@@ -320,10 +320,10 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                       ),
                       child: Row(
                         children: [
-                          Text(mood.emoji, style: const TextStyle(fontSize: 13)),
+                          Text(cat.emoji, style: const TextStyle(fontSize: 13)),
                           const SizedBox(width: 6),
                           Text(
-                            mood.title.split(' ').first,
+                            cat.title,
                             style: TextStyle(
                               color: isSelected ? EmberColors.primaryAmber : EmberColors.textSecondary,
                               fontSize: 12,
@@ -448,7 +448,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
 
     if (queue.isEmpty) {
       return const Center(
-        child: Text('Queue is empty. Pick a cozy mood or search songs above.', style: TextStyle(color: EmberColors.textMuted, fontSize: 13)),
+        child: Text('Queue is empty. Select a music category or search songs above.', style: TextStyle(color: EmberColors.textMuted, fontSize: 13)),
       );
     }
 
@@ -592,44 +592,63 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                 'YOUR PLAYLISTS (${playlists.length})',
                 style: const TextStyle(color: EmberColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.2),
               ),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: EmberColors.primaryAmber.withValues(alpha: 0.18),
-                  foregroundColor: EmberColors.primaryAmber,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
-                ),
-                onPressed: () {
-                  final ctrl = TextEditingController();
-                  showDialog(
-                    context: context,
-                    builder: (dCtx) => AlertDialog(
-                      backgroundColor: EmberColors.surfaceContainerHigh,
-                      title: const Text('Create Playlist', style: TextStyle(color: EmberColors.textPrimary)),
-                      content: TextField(
-                        controller: ctrl,
-                        autofocus: true,
-                        style: const TextStyle(color: EmberColors.textPrimary),
-                        decoration: const InputDecoration(hintText: 'Playlist name...'),
-                      ),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(backgroundColor: EmberColors.primaryAmber),
-                          onPressed: () {
-                            if (ctrl.text.trim().isNotEmpty) {
-                              player.createPlaylist(ctrl.text.trim());
-                              Navigator.pop(dCtx);
-                            }
-                          },
-                          child: const Text('Create', style: TextStyle(color: EmberColors.obsidianBase, fontWeight: FontWeight.bold)),
-                        ),
-                      ],
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent.withValues(alpha: 0.18),
+                      foregroundColor: Colors.redAccent,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
                     ),
-                  );
-                },
-                icon: const FaIcon(FontAwesomeIcons.plus, size: 12),
-                label: const Text('New', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    onPressed: () => _showYouTubeImportDialog(context, player),
+                    icon: const FaIcon(FontAwesomeIcons.youtube, size: 12),
+                    label: const Text('Import Mix/PL', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: EmberColors.primaryAmber.withValues(alpha: 0.18),
+                      foregroundColor: EmberColors.primaryAmber,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+                    ),
+                    onPressed: () {
+                      final ctrl = TextEditingController();
+                      showDialog(
+                        context: context,
+                        builder: (dCtx) => AlertDialog(
+                          backgroundColor: EmberColors.surfaceContainerHigh,
+                          title: const Text('Create Playlist', style: TextStyle(color: EmberColors.textPrimary)),
+                          content: TextField(
+                            controller: ctrl,
+                            autofocus: true,
+                            style: const TextStyle(color: EmberColors.textPrimary),
+                            decoration: const InputDecoration(hintText: 'Playlist name...'),
+                          ),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(backgroundColor: EmberColors.primaryAmber),
+                              onPressed: () {
+                                if (ctrl.text.trim().isNotEmpty) {
+                                  player.createPlaylist(ctrl.text.trim());
+                                  Navigator.pop(dCtx);
+                                }
+                              },
+                              child: const Text('Create', style: TextStyle(color: EmberColors.obsidianBase, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    icon: const FaIcon(FontAwesomeIcons.plus, size: 11),
+                    label: const Text('New', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+                ],
               ),
             ],
           ),
@@ -637,19 +656,49 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
         Expanded(
           child: playlists.isEmpty
               ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const FaIcon(FontAwesomeIcons.folderPlus, size: 40, color: EmberColors.textMuted),
-                      const SizedBox(height: 12),
-                      const Text('No playlists created yet', style: TextStyle(color: EmberColors.textMuted, fontSize: 13)),
-                      const SizedBox(height: 10),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(backgroundColor: EmberColors.primaryAmber),
-                        onPressed: () => player.createPlaylist('Cozy Lo-Fi Sessions'),
-                        child: const Text('Create Sample Playlist', style: TextStyle(color: EmberColors.obsidianBase, fontWeight: FontWeight.bold)),
-                      ),
-                    ],
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const FaIcon(FontAwesomeIcons.folderPlus, size: 40, color: EmberColors.textMuted),
+                        const SizedBox(height: 12),
+                        const Text('No playlists saved yet', style: TextStyle(color: EmberColors.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Import any YouTube Mix / Playlist URL or create custom playlists saved to your device.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: EmberColors.textMuted, fontSize: 12),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.redAccent,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+                              ),
+                              onPressed: () => _showYouTubeImportDialog(context, player),
+                              icon: const FaIcon(FontAwesomeIcons.youtube, size: 13),
+                              label: const Text('Import YouTube Mix', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                            ),
+                            const SizedBox(width: 10),
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: EmberColors.primaryAmber,
+                                foregroundColor: EmberColors.obsidianBase,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+                              ),
+                              onPressed: () => player.createPlaylist('My Top Mix'),
+                              icon: const FaIcon(FontAwesomeIcons.plus, size: 11),
+                              label: const Text('New Playlist', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 )
               : ListView.builder(

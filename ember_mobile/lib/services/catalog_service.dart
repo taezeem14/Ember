@@ -4,149 +4,92 @@ import 'package:http/http.dart' as http;
 import 'package:dart_des/dart_des.dart';
 import '../models/song.dart';
 
-class MoodPreset {
+class MusicCategory {
   final String key;
   final String emoji;
   final String title;
   final String subtitle;
   final String searchQuery;
-  final List<Song> tracks;
 
-  const MoodPreset({
+  const MusicCategory({
     required this.key,
     required this.emoji,
     required this.title,
     required this.subtitle,
     required this.searchQuery,
-    required this.tracks,
   });
 }
 
 class CatalogService {
-  static const List<MoodPreset> cozyMoods = [
-    MoodPreset(
-      key: 'lofi',
-      emoji: '☕',
-      title: 'Lo-Fi Study Beats',
-      subtitle: 'Warm analog warmth & tape flutter',
-      searchQuery: 'lofi chill beats study relax',
-      tracks: [
-        Song(
-          id: 'lofi_01',
-          title: 'Coffee Steam',
-          artist: 'Lofi Coffee Sessions',
-          duration: Duration(minutes: 2, seconds: 45),
-          artworkUrl: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=600&q=80',
-          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/11/71/d6/1171d6ad-3c96-e027-2af6-58028426588c/mzaf_15137631797407745471.plus.aac.p.m4a',
-          lyrics: 'Steam rising from the cup\nLate night clock ticking soft\nGentle keys playing on\nWarm amber glow in the dark.',
-        ),
-        Song(
-          id: 'lofi_02',
-          title: 'Midnight Paper Tape',
-          artist: 'Ember Collective',
-          duration: Duration(minutes: 3, seconds: 12),
-          artworkUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600&q=80',
-          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/2f/90/6e/2f906eee-4aa3-ddd3-121e-54dc6a71edfa/mzaf_2956542638534895059.plus.aac.p.m4a',
-          lyrics: 'Scribbling thoughts in the margin\nCassette tape spins around\nNo hurry, no rush\nJust the warmth of the sound.',
-        ),
-      ],
+  static const List<MusicCategory> categories = [
+    MusicCategory(
+      key: 'trending',
+      emoji: '🚀',
+      title: 'Trending Now',
+      subtitle: 'Top charts & viral hits',
+      searchQuery: 'Trending Songs Hits',
     ),
-    MoodPreset(
-      key: 'rain',
-      emoji: '🌧️',
-      title: 'Rainy Day Windows',
-      subtitle: 'Gentle raindrops & mellow chords',
-      searchQuery: 'rainy day cozy acoustic jazz piano',
-      tracks: [
-        Song(
-          id: 'rain_01',
-          title: 'Waterdrops on Glass',
-          artist: 'Petrichor Sessions',
-          duration: Duration(minutes: 3, seconds: 34),
-          artworkUrl: 'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?w=600&q=80',
-          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/ab/f9/cb/abf9cb62-16d9-e137-659a-61bb8e1bc85f/mzaf_16390625194422190597.plus.aac.p.m4a',
-          lyrics: 'Droplets racing down the pane\nGray skies outside the frame\nInside the kettle boils\nSafe and quiet in the rain.',
-        ),
-      ],
+    MusicCategory(
+      key: 'top_hits',
+      emoji: '🎧',
+      title: 'Global Top 50',
+      subtitle: 'The hottest tracks worldwide',
+      searchQuery: 'Top Global Hits 2026',
     ),
-    MoodPreset(
-      key: 'jazz',
-      emoji: '🎷',
-      title: 'Late Night Espresso Jazz',
-      subtitle: 'Upright acoustic bass & velvet piano',
-      searchQuery: 'late night jazz bar muted trumpet noir',
-      tracks: [
-        Song(
-          id: 'jazz_01',
-          title: 'Smoke & Bourbon Keys',
-          artist: 'The Amber Quartet',
-          duration: Duration(minutes: 4, seconds: 20),
-          artworkUrl: 'https://images.unsplash.com/photo-1511192336575-5a79af67a629?w=600&q=80',
-          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/11/71/d6/1171d6ad-3c96-e027-2af6-58028426588c/mzaf_15137631797407745471.plus.aac.p.m4a',
-          lyrics: 'Walking bass line steady\nBrushes on the snare\nMidnight jazz club candle\nMusic in the air.',
-        ),
-      ],
+    MusicCategory(
+      key: 'pop',
+      emoji: '🎹',
+      title: 'Pop & Dance',
+      subtitle: 'Upbeat melodies & anthems',
+      searchQuery: 'Pop Dance Chart Hits',
     ),
-    MoodPreset(
-      key: 'fireplace',
-      emoji: '🕯️',
-      title: 'Cozy Hearthside',
-      subtitle: 'Crackling embers & nylon acoustic strings',
-      searchQuery: 'warm acoustic fingerstyle guitar cozy',
-      tracks: [
-        Song(
-          id: 'fire_01',
-          title: 'Embers Glowing Soft',
-          artist: 'Cedar & Pine',
-          duration: Duration(minutes: 3, seconds: 15),
-          artworkUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&q=80',
-          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/2f/90/6e/2f906eee-4aa3-ddd3-121e-54dc6a71edfa/mzaf_2956542638534895059.plus.aac.p.m4a',
-          lyrics: 'Wood pops in the fireplace\nShadows dance upon the wall\nWrapped in a wool blanket\nListening to the autumn fall.',
-        ),
-      ],
+    MusicCategory(
+      key: 'hiphop',
+      emoji: '🎤',
+      title: 'Hip-Hop & Rap',
+      subtitle: 'Beats, bars & urban hits',
+      searchQuery: 'Hip Hop Rap Top Tracks',
     ),
-    MoodPreset(
-      key: 'ambient',
-      emoji: '🌌',
-      title: 'Midnight Atmosphere',
-      subtitle: 'Reverberant acoustic pads & gentle warmth',
-      searchQuery: 'chillhop instrumental sleepy night beats',
-      tracks: [
-        Song(
-          id: 'amb_01',
-          title: 'Constellations Above',
-          artist: 'Solaris Drift',
-          duration: Duration(minutes: 5, seconds: 10),
-          artworkUrl: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=600&q=80',
-          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/ab/f9/cb/abf9cb62-16d9-e137-659a-61bb8e1bc85f/mzaf_16390625194422190597.plus.aac.p.m4a',
-          lyrics: 'Stars across the night sky\nDrifting without a care\nCalm ocean of silence\nFloating through the air.',
-        ),
-      ],
+    MusicCategory(
+      key: 'rock',
+      emoji: '🎸',
+      title: 'Rock & Alternative',
+      subtitle: 'Anthems, guitars & indie rock',
+      searchQuery: 'Rock Classics Alternative',
     ),
-    MoodPreset(
-      key: 'autumn',
-      emoji: '🍂',
-      title: 'Autumn Amber Breeze',
-      subtitle: 'Golden leaves & acoustic warmth',
-      searchQuery: 'warm indie folk acoustic golden hour',
-      tracks: [
-        Song(
-          id: 'aut_01',
-          title: 'Golden Leaves Falling',
-          artist: 'Harvest Moon',
-          duration: Duration(minutes: 3, seconds: 48),
-          artworkUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&q=80',
-          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/11/71/d6/1171d6ad-3c96-e027-2af6-58028426588c/mzaf_15137631797407745471.plus.aac.p.m4a',
-          lyrics: 'Crisp autumn wind\nRustling in the trees\nWarm cup in both hands\nGentle golden breeze.',
-        ),
-      ],
+    MusicCategory(
+      key: 'electronic',
+      emoji: '⚡',
+      title: 'Electronic & EDM',
+      subtitle: 'Club energy & festival sound',
+      searchQuery: 'EDM Electronic Dance Festival',
+    ),
+    MusicCategory(
+      key: 'rnb',
+      emoji: '✨',
+      title: 'R&B & Soul',
+      subtitle: 'Smooth grooves & late night rhythms',
+      searchQuery: 'RnB Soul Hits Smooth',
+    ),
+    MusicCategory(
+      key: 'acoustic',
+      emoji: '🌿',
+      title: 'Acoustic & Indie',
+      subtitle: 'Organic instruments & vocals',
+      searchQuery: 'Indie Acoustic Singer Songwriter',
     ),
   ];
 
+  static final Map<String, List<Song>> _categoryCache = {};
+
   static List<Song> getAllTracks() {
     final list = <Song>[];
-    for (final mood in cozyMoods) {
-      list.addAll(mood.tracks);
+    for (final tracks in _categoryCache.values) {
+      for (final track in tracks) {
+        if (!list.any((s) => s.id == track.id)) {
+          list.add(track);
+        }
+      }
     }
     return list;
   }
@@ -154,8 +97,9 @@ class CatalogService {
   /// Synchronous local search for instant typing response and offline playback
   static List<Song> search(String query) {
     final q = query.toLowerCase().trim();
-    if (q.isEmpty) return getAllTracks();
-    return getAllTracks().where((song) {
+    final all = getAllTracks();
+    if (q.isEmpty) return all;
+    return all.where((song) {
       return song.title.toLowerCase().contains(q) ||
           song.artist.toLowerCase().contains(q) ||
           (song.lyrics?.toLowerCase().contains(q) ?? false);
@@ -293,15 +237,30 @@ class CatalogService {
     return search(query);
   }
 
-  /// Live query to fetch fresh atmospheric tracks for any cozy mood
-  static Future<List<Song>> fetchMoodTracks(String moodKey) async {
-    final mood = cozyMoods.firstWhere((m) => m.key == moodKey, orElse: () => cozyMoods.first);
-    final results = await searchOnline(mood.searchQuery, limit: 16);
+  /// Fetch today's real trending full-length songs (320kbps)
+  static Future<List<Song>> fetchTrendingTracks({int limit = 20}) async {
+    return fetchCategoryTracks('trending', limit: limit);
+  }
+
+  /// Fetch full-length 320kbps songs for a specific music category
+  static Future<List<Song>> fetchCategoryTracks(String categoryKey, {int limit = 20}) async {
+    if (_categoryCache.containsKey(categoryKey) && _categoryCache[categoryKey]!.isNotEmpty) {
+      return _categoryCache[categoryKey]!;
+    }
+    final category = categories.firstWhere(
+      (c) => c.key == categoryKey,
+      orElse: () => categories.first,
+    );
+    final results = await searchOnline(category.searchQuery, limit: limit);
     if (results.isNotEmpty) {
+      _categoryCache[categoryKey] = results;
       return results;
     }
-    return mood.tracks;
+    return _categoryCache[categoryKey] ?? [];
   }
+
+  /// Backward-compatible alias
+  static Future<List<Song>> fetchMoodTracks(String key) => fetchCategoryTracks(key);
 
   /// Dynamic recommendation system: fetch tracks related to current song
   static Future<List<Song>> fetchRecommendations(Song song, {int limit = 10}) async {

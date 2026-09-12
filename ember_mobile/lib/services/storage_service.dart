@@ -104,6 +104,37 @@ class StorageService {
     }
   }
 
+  Future<void> savePlaylist(Playlist playlist) async {
+    final idx = _memPlaylists.indexWhere((p) => p.id == playlist.id);
+    if (idx != -1) {
+      _memPlaylists[idx] = playlist;
+    } else {
+      _memPlaylists.insert(0, playlist);
+    }
+    await savePlaylists(_memPlaylists);
+  }
+
+  Future<void> deletePlaylist(String playlistId) async {
+    _memPlaylists.removeWhere((p) => p.id == playlistId);
+    await savePlaylists(_memPlaylists);
+  }
+
+  Future<void> addSongToPlaylist(String playlistId, Song song) async {
+    final idx = _memPlaylists.indexWhere((p) => p.id == playlistId);
+    if (idx != -1) {
+      final existing = _memPlaylists[idx];
+      if (!existing.songs.any((s) => s.id == song.id)) {
+        final updatedSongs = List<Song>.from(existing.songs)..add(song);
+        final updated = existing.copyWith(
+          songs: updatedSongs,
+          coverUrl: existing.coverUrl ?? song.artworkUrl,
+        );
+        _memPlaylists[idx] = updated;
+        await savePlaylists(_memPlaylists);
+      }
+    }
+  }
+
   List<Song> loadDownloads() {
     if (_prefs == null) return List.unmodifiable(_memDownloads);
     final raw = _prefs.getStringList(_downloadsKey) ?? [];
