@@ -1,17 +1,30 @@
+import 'package:flutter/foundation.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 
 Future<AudioHandler> initAudioHandler() async {
-  return await AudioService.init(
-    builder: () => EmberAudioHandler(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.taezeem.ember.channel.audio',
-      androidNotificationChannelName: 'Ember Music Playback',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-    ),
-  );
+  try {
+    return await AudioService.init(
+      builder: () => EmberAudioHandler(),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.taezeem.ember.channel.audio',
+        androidNotificationChannelName: 'Ember Music Playback',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+        androidNotificationIcon: 'mipmap/ic_launcher',
+      ),
+    ).timeout(
+      const Duration(seconds: 4),
+      onTimeout: () {
+        debugPrint('AudioService.init timeout -> using fallback local EmberAudioHandler');
+        return EmberAudioHandler();
+      },
+    );
+  } catch (e, st) {
+    debugPrint('AudioService.init error: $e\n$st -> using fallback local EmberAudioHandler');
+    return EmberAudioHandler();
+  }
 }
 
 class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {

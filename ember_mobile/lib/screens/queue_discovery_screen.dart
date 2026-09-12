@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../models/song.dart';
 import '../providers/player_provider.dart';
 import '../services/catalog_service.dart';
@@ -45,10 +46,10 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                       shape: BoxShape.circle,
                       color: EmberColors.primaryAmber.withOpacity(0.16),
                     ),
-                    child: const Icon(
-                      Icons.local_fire_department_rounded,
+                    child: const FaIcon(
+                      FontAwesomeIcons.fire,
                       color: EmberColors.primaryAmber,
-                      size: 22,
+                      size: 20,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -74,7 +75,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.tune_rounded, color: EmberColors.textSecondary),
+                    icon: const FaIcon(FontAwesomeIcons.sliders, color: EmberColors.textSecondary, size: 18),
                     onPressed: () => _showSoundDialog(context, player),
                   ),
                 ],
@@ -94,7 +95,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                 padding: const EdgeInsets.only(left: 16, right: 4),
                 child: Row(
                   children: [
-                    const Icon(Icons.search_rounded, size: 18, color: EmberColors.textMuted),
+                    const FaIcon(FontAwesomeIcons.magnifyingGlass, size: 15, color: EmberColors.textMuted),
                     const SizedBox(width: 8),
                     Expanded(
                       child: TextField(
@@ -111,7 +112,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                     ),
                     if (_searchController.text.isNotEmpty)
                       IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 16, color: EmberColors.textMuted),
+                        icon: const FaIcon(FontAwesomeIcons.xmark, size: 14, color: EmberColors.textMuted),
                         onPressed: () {
                           _searchController.clear();
                           player.search('');
@@ -203,7 +204,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                       onTap: () => player.clearQueue(),
                       child: const Padding(
                         padding: EdgeInsets.all(4),
-                        child: Icon(Icons.delete_sweep_rounded, size: 18, color: EmberColors.textMuted),
+                        child: FaIcon(FontAwesomeIcons.trashCan, size: 16, color: EmberColors.textMuted),
                       ),
                     ),
                 ],
@@ -261,7 +262,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.music_off_rounded, size: 40, color: EmberColors.textMuted),
+            const FaIcon(FontAwesomeIcons.music, size: 36, color: EmberColors.textMuted),
             const SizedBox(height: 8),
             Text(
               player.activeTab == 'favorites'
@@ -290,7 +291,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
             alignment: Alignment.centerRight,
             padding: const EdgeInsets.only(right: 20),
             color: EmberColors.error.withOpacity(0.8),
-            child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+            child: const FaIcon(FontAwesomeIcons.trashCan, color: Colors.white, size: 18),
           ),
           onDismissed: (_) {
             if (player.activeTab == 'queue') {
@@ -323,9 +324,9 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                             width: 44,
                             height: 44,
                             fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => const Icon(Icons.music_note, color: EmberColors.primaryAmber),
+                            errorWidget: (_, __, ___) => const FaIcon(FontAwesomeIcons.music, size: 16, color: EmberColors.primaryAmber),
                           )
-                        : const Icon(Icons.music_note, color: EmberColors.primaryAmber),
+                        : const FaIcon(FontAwesomeIcons.music, size: 16, color: EmberColors.primaryAmber),
                   ),
                   if (isCurrent)
                     Container(
@@ -365,8 +366,8 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    icon: Icon(
-                      player.isFavorite(song.id) ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                    icon: FaIcon(
+                      player.isFavorite(song.id) ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
                       size: 18,
                       color: player.isFavorite(song.id) ? EmberColors.primaryAmber : EmberColors.textMuted,
                     ),
@@ -374,7 +375,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                   ),
                   if (song.lyrics != null)
                     IconButton(
-                      icon: const Icon(Icons.lyrics_outlined, size: 18, color: EmberColors.textMuted),
+                      icon: const FaIcon(FontAwesomeIcons.alignLeft, size: 16, color: EmberColors.textMuted),
                       onPressed: () => LyricsSheet.show(context, song),
                     ),
                 ],

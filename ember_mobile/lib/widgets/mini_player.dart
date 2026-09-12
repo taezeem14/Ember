@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../providers/player_provider.dart';
 import '../screens/now_playing_screen.dart';
 import '../theme/ember_theme.dart';
@@ -82,9 +83,9 @@ class MiniPlayer extends StatelessWidget {
                                 width: 28,
                                 height: 28,
                                 fit: BoxFit.cover,
-                                errorWidget: (_, __, ___) => const Icon(Icons.music_note, size: 16, color: EmberColors.primaryAmber),
+                                errorWidget: (_, __, ___) => const FaIcon(FontAwesomeIcons.music, size: 14, color: EmberColors.primaryAmber),
                               )
-                            : const Icon(Icons.music_note, size: 16, color: EmberColors.primaryAmber),
+                            : const FaIcon(FontAwesomeIcons.music, size: 14, color: EmberColors.primaryAmber),
                       ),
                     ],
                   ),
@@ -118,9 +119,9 @@ class MiniPlayer extends StatelessWidget {
                   ),
                   // Favorite Heart
                   IconButton(
-                    icon: Icon(
-                      player.isFavorite(song.id) ? Icons.favorite : Icons.favorite_border,
-                      size: 20,
+                    icon: FaIcon(
+                      player.isFavorite(song.id) ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
+                      size: 18,
                       color: player.isFavorite(song.id) ? EmberColors.primaryAmber : EmberColors.textMuted,
                     ),
                     onPressed: () => player.toggleFavorite(song),
@@ -136,10 +137,10 @@ class MiniPlayer extends StatelessWidget {
                     ),
                     child: IconButton(
                       padding: EdgeInsets.zero,
-                      icon: Icon(
-                        player.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      icon: FaIcon(
+                        player.isPlaying ? FontAwesomeIcons.pause : FontAwesomeIcons.play,
                         color: EmberColors.obsidianBase,
-                        size: 24,
+                        size: 16,
                       ),
                       onPressed: () => player.togglePlay(),
                     ),
@@ -147,7 +148,7 @@ class MiniPlayer extends StatelessWidget {
                   const SizedBox(width: 4),
                   // Skip Next
                   IconButton(
-                    icon: const Icon(Icons.skip_next_rounded, size: 24, color: EmberColors.textSecondary),
+                    icon: const FaIcon(FontAwesomeIcons.forwardStep, size: 18, color: EmberColors.textSecondary),
                     onPressed: () => player.skipNext(),
                     splashRadius: 20,
                   ),

@@ -20,12 +20,31 @@ void main() async {
     ),
   );
 
-  final audioHandler = await initAudioHandler();
-  final storageService = await StorageService.init();
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    debugPrint('Ember Flutter Error: ${details.exception}');
+  };
+
+  EmberAudioHandler audioHandler;
+  try {
+    final rawHandler = await initAudioHandler();
+    audioHandler = rawHandler is EmberAudioHandler ? rawHandler : EmberAudioHandler();
+  } catch (e) {
+    debugPrint('AudioHandler init fallback: $e');
+    audioHandler = EmberAudioHandler();
+  }
+
+  StorageService storageService;
+  try {
+    storageService = await StorageService.init();
+  } catch (e) {
+    debugPrint('StorageService init fallback: $e');
+    storageService = StorageService(null);
+  }
 
   runApp(
     EmberMobileApp(
-      audioHandler: audioHandler as EmberAudioHandler,
+      audioHandler: audioHandler,
       storageService: storageService,
     ),
   );

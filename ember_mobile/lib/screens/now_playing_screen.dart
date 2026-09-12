@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../providers/player_provider.dart';
 import '../theme/ember_theme.dart';
 import '../widgets/ambient_glow.dart';
@@ -45,7 +46,7 @@ class NowPlayingScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30, color: EmberColors.textPrimary),
+                    icon: const FaIcon(FontAwesomeIcons.chevronDown, size: 20, color: EmberColors.textPrimary),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                   Column(
@@ -69,7 +70,7 @@ class NowPlayingScreen extends StatelessWidget {
                     ],
                   ),
                   IconButton(
-                    icon: const Icon(Icons.more_horiz_rounded, size: 24, color: EmberColors.textSecondary),
+                    icon: const FaIcon(FontAwesomeIcons.ellipsis, size: 20, color: EmberColors.textSecondary),
                     onPressed: () {},
                   ),
                 ],
@@ -117,11 +118,11 @@ class NowPlayingScreen extends StatelessWidget {
                                   imageUrl: song.artworkUrl,
                                   fit: BoxFit.cover,
                                   errorWidget: (_, __, ___) => const Center(
-                                    child: Icon(Icons.music_note_rounded, size: 64, color: EmberColors.primaryAmber),
+                                    child: FaIcon(FontAwesomeIcons.music, size: 48, color: EmberColors.primaryAmber),
                                   ),
                                 )
                               : const Center(
-                                  child: Icon(Icons.music_note_rounded, size: 64, color: EmberColors.primaryAmber),
+                                  child: FaIcon(FontAwesomeIcons.music, size: 48, color: EmberColors.primaryAmber),
                                 ),
                         ),
                       ),
@@ -164,9 +165,9 @@ class NowPlayingScreen extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    icon: Icon(
-                      player.isFavorite(song.id) ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                      size: 28,
+                    icon: FaIcon(
+                      player.isFavorite(song.id) ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
+                      size: 24,
                       color: player.isFavorite(song.id) ? EmberColors.primaryAmber : EmberColors.textMuted,
                     ),
                     onPressed: () => player.toggleFavorite(song),
@@ -237,15 +238,15 @@ class NowPlayingScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   IconButton(
-                    icon: Icon(
-                      Icons.shuffle_rounded,
+                    icon: FaIcon(
+                      FontAwesomeIcons.shuffle,
                       color: player.isShuffle ? EmberColors.primaryAmber : EmberColors.textMuted,
-                      size: 24,
+                      size: 18,
                     ),
                     onPressed: () => player.toggleShuffle(),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.skip_previous_rounded, color: EmberColors.textPrimary, size: 36),
+                    icon: const FaIcon(FontAwesomeIcons.backwardStep, color: EmberColors.textPrimary, size: 24),
                     onPressed: () => player.skipPrevious(),
                   ),
                   // Hero 64px circular play/pause button with glowing amber shadow
@@ -269,23 +270,23 @@ class NowPlayingScreen extends StatelessWidget {
                       ],
                     ),
                     child: IconButton(
-                      icon: Icon(
-                        player.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      icon: FaIcon(
+                        player.isPlaying ? FontAwesomeIcons.pause : FontAwesomeIcons.play,
                         color: EmberColors.obsidianBase,
-                        size: 38,
+                        size: 24,
                       ),
                       onPressed: () => player.togglePlay(),
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.skip_next_rounded, color: EmberColors.textPrimary, size: 36),
+                    icon: const FaIcon(FontAwesomeIcons.forwardStep, color: EmberColors.textPrimary, size: 24),
                     onPressed: () => player.skipNext(),
                   ),
                   IconButton(
-                    icon: Icon(
-                      player.repeatMode == 'one' ? Icons.repeat_one_rounded : Icons.repeat_rounded,
+                    icon: FaIcon(
+                      FontAwesomeIcons.repeat,
                       color: player.repeatMode != 'off' ? EmberColors.primaryAmber : EmberColors.textMuted,
-                      size: 24,
+                      size: 18,
                     ),
                     onPressed: () => player.cycleRepeatMode(),
                   ),
@@ -309,7 +310,7 @@ class NowPlayingScreen extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.lyrics_outlined, size: 20, color: EmberColors.primaryAmber),
+                      const FaIcon(FontAwesomeIcons.alignLeft, size: 16, color: EmberColors.primaryAmber),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
@@ -322,7 +323,7 @@ class NowPlayingScreen extends StatelessWidget {
                               ),
                         ),
                       ),
-                      const Icon(Icons.arrow_upward_rounded, size: 16, color: EmberColors.textMuted),
+                      const FaIcon(FontAwesomeIcons.arrowUp, size: 13, color: EmberColors.textMuted),
                     ],
                   ),
                 ),
@@ -335,7 +336,7 @@ class NowPlayingScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _PillAction(
-                    icon: Icons.bedtime_outlined,
+                    icon: FontAwesomeIcons.moon,
                     label: player.sleepSecondsRemaining > 0
                         ? '${(player.sleepSecondsRemaining / 60).ceil()}m'
                         : 'Sleep',
@@ -343,7 +344,7 @@ class NowPlayingScreen extends StatelessWidget {
                     onTap: () => _showSleepTimerDialog(context, player),
                   ),
                   _PillAction(
-                    icon: Icons.speed_rounded,
+                    icon: FontAwesomeIcons.gaugeHigh,
                     label: '${player.speed.toStringAsFixed(player.speed == player.speed.roundToDouble() ? 1 : 2)}x',
                     active: player.speed != 1.0,
                     onTap: () {
@@ -353,7 +354,7 @@ class NowPlayingScreen extends StatelessWidget {
                     },
                   ),
                   _PillAction(
-                    icon: Icons.queue_music_rounded,
+                    icon: FontAwesomeIcons.listUl,
                     label: 'Queue',
                     active: false,
                     onTap: () => Navigator.of(context).pop(),
@@ -429,7 +430,7 @@ class GestureByKey extends StatelessWidget {
 }
 
 class _PillAction extends StatelessWidget {
-  final IconData icon;
+  final FaIconData icon;
   final String label;
   final bool active;
   final VoidCallback onTap;
@@ -458,8 +459,8 @@ class _PillAction extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: active ? EmberColors.primaryAmber : EmberColors.textSecondary),
-            const SizedBox(width: 6),
+            FaIcon(icon, size: 13, color: active ? EmberColors.primaryAmber : EmberColors.textSecondary),
+            const SizedBox(width: 8),
             Text(
               label,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
