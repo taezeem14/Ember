@@ -26,6 +26,8 @@ class PlayerProvider extends ChangeNotifier {
 
   Timer? _sleepTimer;
   int _sleepSecondsRemaining = 0;
+  Timer? _searchDebounce;
+  bool _isSearching = false;
 
   StreamSubscription? _posSub;
   StreamSubscription? _durSub;
@@ -49,6 +51,7 @@ class PlayerProvider extends ChangeNotifier {
   String? get activeMood => _activeMood;
   String get searchQuery => _searchQuery;
   List<Song> get searchResults => _searchResults;
+  bool get isSearching => _isSearching;
   List<Song> get favorites => _favorites;
   List<Song> get history => _history;
   int get sleepSecondsRemaining => _sleepSecondsRemaining;
@@ -196,7 +199,7 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void selectMood(String moodKey) {
+  Future<void> selectMood(String moodKey) async {
     _activeMood = moodKey;
     final found = CatalogService.cozyMoods.firstWhere(
       (m) => m.key == moodKey,
@@ -208,12 +211,55 @@ class PlayerProvider extends ChangeNotifier {
     if (_queue.isNotEmpty) {
       playSong(_queue[0]);
     }
+
+    // Dynamically fetch fresh live atmospheric tracks for this cozy mood
+    try {
+      final liveTracks = await CatalogService.fetchMoodTracks(moodKey);
+      if (liveTracks.isNotEmpty && _activeMood == moodKey) {
+        final cur = currentSong;
+        if (cur != null) {
+          _queue = [cur, ...liveTracks.where((t) => t.id != cur.id)];
+        } else {
+          _queue = liveTracks;
+        }
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   void search(String query) {
     _searchQuery = query;
-    _searchResults = CatalogService.search(query);
+    _searchDebounce?.cancel();
+
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      _isSearching = false;
+      _searchResults = CatalogService.getAllTracks();
+      notifyListeners();
+      return;
+    }
+
+    // Immediately display local instant results so the UI responds in 0ms
+    _searchResults = CatalogService.search(trimmed);
+    _isSearching = true;
     notifyListeners();
+
+    // Debounce 350ms before firing live online music search across global catalog
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () async {
+      try {
+        final onlineResults = await CatalogService.searchOnline(trimmed);
+        if (_searchQuery == query) {
+          _searchResults = onlineResults;
+          _isSearching = false;
+          notifyListeners();
+        }
+      } catch (_) {
+        if (_searchQuery == query) {
+          _isSearching = false;
+          notifyListeners();
+        }
+      }
+    });
   }
 
   Future<void> toggleFavorite(Song song) async {
@@ -262,11 +308,10 @@ class PlayerProvider extends ChangeNotifier {
 
   void removeTrackAt(int index) {
     if (index < 0 || index >= _queue.length) return;
-    if (index == _currentIndex) {
-      skipNext();
-    }
     _queue.removeAt(index);
-    if (_currentIndex > index) {
+    if (_currentIndex >= _queue.length) {
+      _currentIndex = _queue.length - 1;
+    } else if (index < _currentIndex) {
       _currentIndex--;
     }
     notifyListeners();
@@ -293,6 +338,7 @@ class PlayerProvider extends ChangeNotifier {
     _durSub?.cancel();
     _stateSub?.cancel();
     _sleepTimer?.cancel();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 }

@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import '../models/song.dart';
 
 class MoodPreset {
@@ -5,6 +8,7 @@ class MoodPreset {
   final String emoji;
   final String title;
   final String subtitle;
+  final String searchQuery;
   final List<Song> tracks;
 
   const MoodPreset({
@@ -12,6 +16,7 @@ class MoodPreset {
     required this.emoji,
     required this.title,
     required this.subtitle,
+    required this.searchQuery,
     required this.tracks,
   });
 }
@@ -23,23 +28,24 @@ class CatalogService {
       emoji: '☕',
       title: 'Lo-Fi Study Beats',
       subtitle: 'Warm analog warmth & tape flutter',
+      searchQuery: 'lofi chill beats study relax',
       tracks: [
         Song(
           id: 'lofi_01',
-          title: 'Midnight Coffee Steam',
-          artist: 'Komorebi Sound',
+          title: 'Coffee Steam',
+          artist: 'Lofi Coffee Sessions',
           duration: Duration(minutes: 2, seconds: 45),
-          artworkUrl: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=500&q=80',
-          streamUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+          artworkUrl: 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=600&q=80',
+          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/11/71/d6/1171d6ad-3c96-e027-2af6-58028426588c/mzaf_15137631797407745471.plus.aac.p.m4a',
           lyrics: 'Steam rising from the cup\nLate night clock ticking soft\nGentle keys playing on\nWarm amber glow in the dark.',
         ),
         Song(
           id: 'lofi_02',
-          title: 'Paper Notebooks & Tape',
+          title: 'Midnight Paper Tape',
           artist: 'Ember Collective',
           duration: Duration(minutes: 3, seconds: 12),
-          artworkUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=500&q=80',
-          streamUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+          artworkUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600&q=80',
+          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/2f/90/6e/2f906eee-4aa3-ddd3-121e-54dc6a71edfa/mzaf_2956542638534895059.plus.aac.p.m4a',
           lyrics: 'Scribbling thoughts in the margin\nCassette tape spins around\nNo hurry, no rush\nJust the warmth of the sound.',
         ),
       ],
@@ -49,24 +55,16 @@ class CatalogService {
       emoji: '🌧️',
       title: 'Rainy Day Windows',
       subtitle: 'Gentle raindrops & mellow chords',
+      searchQuery: 'rainy day cozy acoustic jazz piano',
       tracks: [
         Song(
           id: 'rain_01',
           title: 'Waterdrops on Glass',
           artist: 'Petrichor Sessions',
           duration: Duration(minutes: 3, seconds: 34),
-          artworkUrl: 'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?w=500&q=80',
-          streamUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
+          artworkUrl: 'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?w=600&q=80',
+          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/ab/f9/cb/abf9cb62-16d9-e137-659a-61bb8e1bc85f/mzaf_16390625194422190597.plus.aac.p.m4a',
           lyrics: 'Droplets racing down the pane\nGray skies outside the frame\nInside the kettle boils\nSafe and quiet in the rain.',
-        ),
-        Song(
-          id: 'rain_02',
-          title: 'Autumn Rain In Kyoto',
-          artist: 'Sora Trio',
-          duration: Duration(minutes: 4, seconds: 05),
-          artworkUrl: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=500&q=80',
-          streamUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
-          lyrics: 'Stone lanterns wet with moss\nPebbles washed clean\nPiano notes echoing\nA tranquil, quiet scene.',
         ),
       ],
     ),
@@ -75,14 +73,15 @@ class CatalogService {
       emoji: '🎷',
       title: 'Late Night Espresso Jazz',
       subtitle: 'Upright acoustic bass & velvet piano',
+      searchQuery: 'late night jazz bar muted trumpet noir',
       tracks: [
         Song(
           id: 'jazz_01',
           title: 'Smoke & Bourbon Keys',
           artist: 'The Amber Quartet',
           duration: Duration(minutes: 4, seconds: 20),
-          artworkUrl: 'https://images.unsplash.com/photo-1511192336575-5a79af67a629?w=500&q=80',
-          streamUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3',
+          artworkUrl: 'https://images.unsplash.com/photo-1511192336575-5a79af67a629?w=600&q=80',
+          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/11/71/d6/1171d6ad-3c96-e027-2af6-58028426588c/mzaf_15137631797407745471.plus.aac.p.m4a',
           lyrics: 'Walking bass line steady\nBrushes on the snare\nMidnight jazz club candle\nMusic in the air.',
         ),
       ],
@@ -92,14 +91,15 @@ class CatalogService {
       emoji: '🕯️',
       title: 'Cozy Hearthside',
       subtitle: 'Crackling embers & nylon acoustic strings',
+      searchQuery: 'warm acoustic fingerstyle guitar cozy',
       tracks: [
         Song(
           id: 'fire_01',
           title: 'Embers Glowing Soft',
           artist: 'Cedar & Pine',
           duration: Duration(minutes: 3, seconds: 15),
-          artworkUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=500&q=80',
-          streamUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3',
+          artworkUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&q=80',
+          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/2f/90/6e/2f906eee-4aa3-ddd3-121e-54dc6a71edfa/mzaf_2956542638534895059.plus.aac.p.m4a',
           lyrics: 'Wood pops in the fireplace\nShadows dance upon the wall\nWrapped in a wool blanket\nListening to the autumn fall.',
         ),
       ],
@@ -109,14 +109,15 @@ class CatalogService {
       emoji: '🌌',
       title: 'Midnight Atmosphere',
       subtitle: 'Reverberant acoustic pads & gentle warmth',
+      searchQuery: 'chillhop instrumental sleepy night beats',
       tracks: [
         Song(
           id: 'amb_01',
           title: 'Constellations Above',
           artist: 'Solaris Drift',
           duration: Duration(minutes: 5, seconds: 10),
-          artworkUrl: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=500&q=80',
-          streamUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3',
+          artworkUrl: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=600&q=80',
+          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/ab/f9/cb/abf9cb62-16d9-e137-659a-61bb8e1bc85f/mzaf_16390625194422190597.plus.aac.p.m4a',
           lyrics: 'Stars across the night sky\nDrifting without a care\nCalm ocean of silence\nFloating through the air.',
         ),
       ],
@@ -126,14 +127,15 @@ class CatalogService {
       emoji: '🍂',
       title: 'Autumn Amber Breeze',
       subtitle: 'Golden leaves & acoustic warmth',
+      searchQuery: 'warm indie folk acoustic golden hour',
       tracks: [
         Song(
           id: 'aut_01',
           title: 'Golden Leaves Falling',
           artist: 'Harvest Moon',
           duration: Duration(minutes: 3, seconds: 48),
-          artworkUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=500&q=80',
-          streamUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3',
+          artworkUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&q=80',
+          streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/11/71/d6/1171d6ad-3c96-e027-2af6-58028426588c/mzaf_15137631797407745471.plus.aac.p.m4a',
           lyrics: 'Crisp autumn wind\nRustling in the trees\nWarm cup in both hands\nGentle golden breeze.',
         ),
       ],
@@ -148,6 +150,7 @@ class CatalogService {
     return list;
   }
 
+  /// Synchronous local search for instant typing response and offline playback
   static List<Song> search(String query) {
     final q = query.toLowerCase().trim();
     if (q.isEmpty) return getAllTracks();
@@ -156,5 +159,73 @@ class CatalogService {
           song.artist.toLowerCase().contains(q) ||
           (song.lyrics?.toLowerCase().contains(q) ?? false);
     }).toList();
+  }
+
+  /// Real-world online music catalog search querying global music archives
+  static Future<List<Song>> searchOnline(String query, {int limit = 25}) async {
+    final q = query.trim();
+    if (q.isEmpty) return getAllTracks();
+
+    final url = Uri.parse(
+      'https://itunes.apple.com/search?term=${Uri.encodeComponent(q)}&entity=song&limit=$limit',
+    );
+
+    try {
+      final resp = await http.get(url).timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final rawResults = data['results'] as List? ?? [];
+        final parsed = <Song>[];
+
+        for (final item in rawResults) {
+          if (item is Map<String, dynamic>) {
+            final trackName = item['trackName'] as String?;
+            final artistName = item['artistName'] as String?;
+            final previewUrl = item['previewUrl'] as String?;
+            if (trackName == null || previewUrl == null || previewUrl.isEmpty) continue;
+
+            final trackId = item['trackId']?.toString() ?? UniqueKey().toString();
+            final durationMs = (item['trackTimeMillis'] as num?)?.toInt() ?? 180000;
+            final rawArt = item['artworkUrl100'] as String? ?? '';
+            // Upgrade artwork resolution from 100x100 thumbnail to crisp 600x600 HD artwork
+            final artworkUrl = rawArt.replaceAll('100x100bb', '600x600bb');
+            final genre = item['primaryGenreName'] as String? ?? 'Music';
+            final collectionName = item['collectionName'] as String? ?? 'Single';
+            final releaseDate = item['releaseDate'] as String? ?? '';
+            final year = releaseDate.length >= 4 ? releaseDate.substring(0, 4) : '';
+
+            parsed.add(
+              Song(
+                id: trackId,
+                title: trackName,
+                artist: artistName ?? 'Unknown Artist',
+                duration: Duration(milliseconds: durationMs),
+                artworkUrl: artworkUrl,
+                streamUrl: previewUrl,
+                lyrics: 'Artist: $artistName\nAlbum: $collectionName\nGenre: $genre • $year\n\nHigh-definition streaming preview powered by Apple Music / iTunes.',
+              ),
+            );
+          }
+        }
+
+        if (parsed.isNotEmpty) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      debugPrint('Online music search error: $e');
+    }
+
+    return search(query);
+  }
+
+  /// Live query to fetch fresh atmospheric tracks for any cozy mood
+  static Future<List<Song>> fetchMoodTracks(String moodKey) async {
+    final mood = cozyMoods.firstWhere((m) => m.key == moodKey, orElse: () => cozyMoods.first);
+    final results = await searchOnline(mood.searchQuery, limit: 16);
+    if (results.isNotEmpty) {
+      return results;
+    }
+    return mood.tracks;
   }
 }

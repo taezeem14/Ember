@@ -102,7 +102,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                         controller: _searchController,
                         style: const TextStyle(color: EmberColors.textPrimary, fontSize: 13),
                         decoration: const InputDecoration(
-                          hintText: 'Search cozy tracks, artists...',
+                          hintText: 'Search any song, artist, album...',
                           hintStyle: TextStyle(color: EmberColors.textMuted, fontSize: 13),
                           border: InputBorder.none,
                           isDense: true,
@@ -110,7 +110,19 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                         onChanged: (val) => player.search(val),
                       ),
                     ),
-                    if (_searchController.text.isNotEmpty)
+                    if (player.isSearching)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: EmberColors.primaryAmber,
+                          ),
+                        ),
+                      ),
+                    if (_searchController.text.isNotEmpty && !player.isSearching)
                       IconButton(
                         icon: const FaIcon(FontAwesomeIcons.xmark, size: 14, color: EmberColors.textMuted),
                         onPressed: () {
@@ -257,19 +269,45 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
       songList = player.queue;
     }
 
+    if (player.isSearching && _searchController.text.isNotEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: EmberColors.primaryAmber,
+            ),
+            SizedBox(height: 14),
+            Text(
+              'Searching global catalogue...',
+              style: TextStyle(color: EmberColors.textSecondary, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (songList.isEmpty) {
+      final isSearch = _searchController.text.isNotEmpty;
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const FaIcon(FontAwesomeIcons.music, size: 36, color: EmberColors.textMuted),
-            const SizedBox(height: 8),
+            FaIcon(
+              isSearch ? FontAwesomeIcons.magnifyingGlass : FontAwesomeIcons.music,
+              size: 36,
+              color: EmberColors.textMuted,
+            ),
+            const SizedBox(height: 10),
             Text(
-              player.activeTab == 'favorites'
-                  ? 'No favorites pinned yet ♡'
-                  : player.activeTab == 'history'
-                      ? 'No playback history yet'
-                      : 'Search or pick a cozy mood above',
+              isSearch
+                  ? 'No songs found for "${_searchController.text}"'
+                  : player.activeTab == 'favorites'
+                      ? 'No favorites pinned yet ♡'
+                      : player.activeTab == 'history'
+                          ? 'No playback history yet'
+                          : 'Search any song, artist or pick a mood above',
               style: const TextStyle(color: EmberColors.textMuted, fontSize: 13),
             ),
           ],

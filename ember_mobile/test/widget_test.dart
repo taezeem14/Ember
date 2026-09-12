@@ -87,6 +87,23 @@ void main() {
       final searched = CatalogService.search('');
       expect(searched.length, all.length);
     });
+
+    test('Catalog fetchMoodTracks returns non-empty track list for all mood keys', () async {
+      for (final mood in CatalogService.cozyMoods) {
+        final tracks = await CatalogService.fetchMoodTracks(mood.key);
+        expect(tracks.isNotEmpty, true, reason: 'Mood ${mood.key} should return tracks');
+        expect(tracks.first.title.isNotEmpty, true);
+        expect(tracks.first.streamUrl.isNotEmpty, true);
+      }
+    });
+
+    test('Catalog searchOnline returns tracks or falls back cleanly', () async {
+      final results = await CatalogService.searchOnline('Coffee');
+      expect(results.isNotEmpty, true);
+      expect(results.first.title.isNotEmpty, true);
+      expect(results.first.artist.isNotEmpty, true);
+      expect(results.first.streamUrl.isNotEmpty, true);
+    });
   });
 
   group('Theme Tokens Tests', () {
