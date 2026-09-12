@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/song.dart';
 import '../services/audio_handler.dart';
 import '../services/catalog_service.dart';
+import '../services/lyrics_service.dart';
 import '../services/storage_service.dart';
 
 class PlayerProvider extends ChangeNotifier {
@@ -23,6 +24,9 @@ class PlayerProvider extends ChangeNotifier {
   List<Song> _searchResults = [];
   List<Song> _favorites = [];
   List<Song> _history = [];
+
+  LyricsResult _lyrics = LyricsResult.empty;
+  bool _isLoadingLyrics = false;
 
   Timer? _sleepTimer;
   int _sleepSecondsRemaining = 0;
@@ -55,6 +59,23 @@ class PlayerProvider extends ChangeNotifier {
   List<Song> get favorites => _favorites;
   List<Song> get history => _history;
   int get sleepSecondsRemaining => _sleepSecondsRemaining;
+
+  LyricsResult get lyrics => _lyrics;
+  List<LyricLine> get syncedLyrics => _lyrics.syncedLyrics;
+  String get plainLyrics => _lyrics.plainLyrics;
+  bool get hasSyncedLyrics => _lyrics.hasSynced;
+  bool get isLoadingLyrics => _isLoadingLyrics;
+
+  int get currentLyricIndex {
+    if (_lyrics.syncedLyrics.isEmpty) return -1;
+    final pos = _position;
+    for (int i = _lyrics.syncedLyrics.length - 1; i >= 0; i--) {
+      if (pos >= _lyrics.syncedLyrics[i].timestamp) {
+        return i;
+      }
+    }
+    return 0;
+  }
 
   void _init() {
     _favorites = _storageService.loadFavorites();
@@ -108,7 +129,35 @@ class PlayerProvider extends ChangeNotifier {
     _recordHistory(song);
     _duration = song.duration;
     notifyListeners();
+    _loadLyrics(song);
     await _audioHandler.playSong(song);
+  }
+
+  Future<void> _loadLyrics(Song song) async {
+    _isLoadingLyrics = true;
+    _lyrics = LyricsResult.empty;
+    notifyListeners();
+
+    try {
+      final res = await LyricsService.fetchLyrics(song.title, song.artist);
+      if (currentSong?.id == song.id) {
+        _lyrics = res;
+        _isLoadingLyrics = false;
+        notifyListeners();
+      }
+    } catch (e) {
+      if (currentSong?.id == song.id) {
+        _isLoadingLyrics = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> retryFetchLyrics() async {
+    final cur = currentSong;
+    if (cur != null) {
+      await _loadLyrics(cur);
+    }
   }
 
   Future<void> togglePlay() async {

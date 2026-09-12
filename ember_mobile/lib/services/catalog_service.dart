@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:dart_des/dart_des.dart';
 import '../models/song.dart';
 
 class MoodPreset {
@@ -161,17 +162,95 @@ class CatalogService {
     }).toList();
   }
 
-  /// Real-world online music catalog search querying global music archives
+  static final List<int> _desKey = utf8.encode('38346591');
+
+  /// Decrypt JioSaavn encrypted media URLs using DES in ECB mode
+  static String? decryptMediaUrl(String? encryptedMediaUrl) {
+    if (encryptedMediaUrl == null || encryptedMediaUrl.trim().isEmpty) return null;
+    try {
+      final des = DES(key: _desKey, mode: DESMode.ECB, paddingType: DESPaddingType.PKCS7);
+      final encryptedBytes = base64.decode(encryptedMediaUrl.trim());
+      final decryptedBytes = des.decrypt(encryptedBytes);
+      final rawUrl = utf8.decode(decryptedBytes).trim();
+      // Upgrade from default 96kbps to 320kbps high-definition full song stream
+      return rawUrl.replaceAll('_96.mp4', '_320.mp4');
+    } catch (e) {
+      debugPrint('Error decrypting media URL: $e');
+      return null;
+    }
+  }
+
+  static String _unescape(dynamic text) {
+    if (text == null) return '';
+    return text
+        .toString()
+        .replaceAll('&quot;', '"')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&#039;', "'")
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .trim();
+  }
+
+  /// Real-world online music catalog search with full-length 320kbps song streaming
   static Future<List<Song>> searchOnline(String query, {int limit = 25}) async {
     final q = query.trim();
     if (q.isEmpty) return getAllTracks();
 
-    final url = Uri.parse(
-      'https://itunes.apple.com/search?term=${Uri.encodeComponent(q)}&entity=song&limit=$limit',
-    );
-
+    // 1. Primary: Search full-length song catalogue with 320kbps streams
     try {
-      final resp = await http.get(url).timeout(const Duration(seconds: 5));
+      final saavnUrl = Uri.parse(
+        'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&includeMetaTags=1&p=1&n=$limit&q=${Uri.encodeComponent(q)}',
+      );
+      final resp = await http.get(saavnUrl, headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(seconds: 5));
+
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final rawResults = data['results'] as List? ?? [];
+        final parsed = <Song>[];
+
+        for (final item in rawResults) {
+          if (item is Map<String, dynamic>) {
+            final title = _unescape(item['song'] ?? item['title']);
+            final artist = _unescape(item['singers'] ?? item['primary_artists'] ?? item['music']);
+            final encrypted = item['encrypted_media_url'] as String?;
+            if (title.isEmpty || encrypted == null || encrypted.isEmpty) continue;
+
+            final streamUrl = decryptMediaUrl(encrypted);
+            if (streamUrl == null || streamUrl.isEmpty) continue;
+
+            final trackId = item['id']?.toString() ?? UniqueKey().toString();
+            final durationSec = int.tryParse('${item['duration']}') ?? 180;
+            final rawArt = item['image'] as String? ?? '';
+            final artworkUrl = rawArt.replaceAll('150x150', '500x500').replaceAll('50x50', '500x500');
+
+            parsed.add(
+              Song(
+                id: trackId,
+                title: title,
+                artist: artist.isNotEmpty ? artist : 'Unknown Artist',
+                duration: Duration(seconds: durationSec),
+                artworkUrl: artworkUrl,
+                streamUrl: streamUrl,
+              ),
+            );
+          }
+        }
+
+        if (parsed.isNotEmpty) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      debugPrint('Primary full song search error: $e');
+    }
+
+    // 2. Secondary Fallback: Global iTunes catalogue
+    try {
+      final itunesUrl = Uri.parse(
+        'https://itunes.apple.com/search?term=${Uri.encodeComponent(q)}&entity=song&limit=$limit',
+      );
+      final resp = await http.get(itunesUrl).timeout(const Duration(seconds: 5));
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final rawResults = data['results'] as List? ?? [];
@@ -187,12 +266,7 @@ class CatalogService {
             final trackId = item['trackId']?.toString() ?? UniqueKey().toString();
             final durationMs = (item['trackTimeMillis'] as num?)?.toInt() ?? 180000;
             final rawArt = item['artworkUrl100'] as String? ?? '';
-            // Upgrade artwork resolution from 100x100 thumbnail to crisp 600x600 HD artwork
             final artworkUrl = rawArt.replaceAll('100x100bb', '600x600bb');
-            final genre = item['primaryGenreName'] as String? ?? 'Music';
-            final collectionName = item['collectionName'] as String? ?? 'Single';
-            final releaseDate = item['releaseDate'] as String? ?? '';
-            final year = releaseDate.length >= 4 ? releaseDate.substring(0, 4) : '';
 
             parsed.add(
               Song(
@@ -202,7 +276,6 @@ class CatalogService {
                 duration: Duration(milliseconds: durationMs),
                 artworkUrl: artworkUrl,
                 streamUrl: previewUrl,
-                lyrics: 'Artist: $artistName\nAlbum: $collectionName\nGenre: $genre • $year\n\nHigh-definition streaming preview powered by Apple Music / iTunes.',
               ),
             );
           }
@@ -213,9 +286,10 @@ class CatalogService {
         }
       }
     } catch (e) {
-      debugPrint('Online music search error: $e');
+      debugPrint('iTunes search fallback error: $e');
     }
 
+    // 3. Offline fallback
     return search(query);
   }
 

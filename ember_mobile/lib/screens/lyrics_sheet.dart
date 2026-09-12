@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/song.dart';
 import '../theme/ember_theme.dart';
+import '../widgets/synchronized_lyrics_view.dart';
 
 class LyricsSheet extends StatelessWidget {
   final Song song;
@@ -18,10 +19,8 @@ class LyricsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final lyrics = song.lyrics ?? 'Instrumental / No lyrics available for this track.';
-
     return Container(
-      height: MediaQuery.of(context).size.height * 0.72,
+      height: MediaQuery.of(context).size.height * 0.75,
       decoration: const BoxDecoration(
         color: EmberColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -73,21 +72,8 @@ class LyricsSheet extends StatelessWidget {
             ),
           ),
           const Divider(color: EmberColors.outlineVariant, height: 1),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-              child: SelectableText(
-                lyrics,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: EmberColors.textPrimary,
-                      fontSize: 18,
-                      height: 2.0,
-                      letterSpacing: 0.3,
-                      fontWeight: FontWeight.w500,
-                    ),
-              ),
-            ),
+          const Expanded(
+            child: SynchronizedLyricsView(),
           ),
         ],
       ),

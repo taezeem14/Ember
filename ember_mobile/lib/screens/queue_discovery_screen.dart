@@ -8,6 +8,7 @@ import '../services/catalog_service.dart';
 import '../theme/ember_theme.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/spectrum_bars.dart';
+import '../widgets/synchronized_lyrics_view.dart';
 import 'lyrics_sheet.dart';
 
 class QueueDiscoveryScreen extends StatefulWidget {
@@ -238,24 +239,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
 
   Widget _buildTabContent(BuildContext context, PlayerProvider player) {
     if (player.activeTab == 'lyrics') {
-      final cur = player.currentSong;
-      if (cur == null || cur.lyrics == null) {
-        return const Center(
-          child: Text('No lyrics available', style: TextStyle(color: EmberColors.textMuted)),
-        );
-      }
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: SelectableText(
-          cur.lyrics!,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: EmberColors.textPrimary,
-            fontSize: 16,
-            height: 1.9,
-          ),
-        ),
-      );
+      return const SynchronizedLyricsView();
     }
 
     List<Song> songList;

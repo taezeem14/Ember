@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:ember_mobile/models/song.dart';
 import 'package:ember_mobile/services/catalog_service.dart';
+import 'package:ember_mobile/services/lyrics_service.dart';
 import 'package:ember_mobile/theme/ember_theme.dart';
 import 'package:ember_mobile/widgets/ambient_glow.dart';
 import 'package:ember_mobile/widgets/vinyl_disc.dart';
@@ -103,6 +104,36 @@ void main() {
       expect(results.first.title.isNotEmpty, true);
       expect(results.first.artist.isNotEmpty, true);
       expect(results.first.streamUrl.isNotEmpty, true);
+    });
+
+    test('Catalog decryptMediaUrl correctly decrypts Saavn encrypted URL', () {
+      const enc = 'ID2ieOjCrwfgWvL5sXl4B1ImC5QfbsDyUAfhmijvFBT8pPh5PqKgzsRHfUZzMKSjj3NUx57Nm2u/4CmI0GLa9hw7tS9a8Gtq';
+      final decrypted = CatalogService.decryptMediaUrl(enc);
+      expect(decrypted, isNotNull);
+      expect(decrypted, startsWith('https://aac.saavncdn.com/'));
+      expect(decrypted, endsWith('_320.mp4'));
+    });
+  });
+
+  group('Lyrics Service Tests', () {
+    test('parseLrc correctly parses timestamp and text', () {
+      const lrc = '''
+[00:15.50] Main track outta your league too, ah
+[01:05.80] House so empty, need a centerpiece
+[02:00.00] Look what you have done
+''';
+      final lines = LyricsService.parseLrc(lrc);
+      expect(lines.length, 3);
+      expect(lines[0].timestamp, const Duration(seconds: 15, milliseconds: 500));
+      expect(lines[0].text, 'Main track outta your league too, ah');
+      expect(lines[1].timestamp, const Duration(minutes: 1, seconds: 5, milliseconds: 800));
+      expect(lines[2].timestamp, const Duration(minutes: 2));
+    });
+
+    test('cleanString strips extraneous title annotations', () {
+      expect(LyricsService.cleanString('Starboy (feat. Daft Punk)'), 'Starboy');
+      expect(LyricsService.cleanString('In The End [Official Video]'), 'In The End');
+      expect(LyricsService.cleanString('Something Just Like This (Remastered)'), 'Something Just Like This');
     });
   });
 
