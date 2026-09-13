@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../models/song.dart';
+import 'catalog_service.dart';
 import 'storage_service.dart';
 
 class DownloadProgress {
@@ -84,12 +85,13 @@ class DownloadService {
       final safeTitle = _sanitizeFilename('${song.title} - ${song.artist}');
       final file = File('${dir.path}/$safeTitle.mp3');
 
+      bool downloaded = false;
       // Check if YouTube track
       if (song.streamUrl.contains('youtube') || song.streamUrl.contains('youtu.be') || song.id.startsWith('yt_')) {
         final yt = YoutubeExplode();
         try {
           final videoId = song.id.startsWith('yt_') ? song.id.substring(3) : song.id;
-          final manifest = await yt.videos.streamsClient.getManifest(videoId);
+          final manifest = await yt.videos.streamsClient.getManifest(videoId).timeout(const Duration(seconds: 5));
           final audioStreamInfo = manifest.audioOnly.withHighestBitrate();
           final stream = yt.videos.streamsClient.get(audioStreamInfo);
 
@@ -106,12 +108,37 @@ class DownloadService {
           }
           await output.flush();
           await output.close();
+          downloaded = true;
+        } catch (ytErr) {
+          debugPrint('YouTube direct download error: $ytErr. Attempting candidate fallback...');
         } finally {
           yt.close();
         }
-      } else {
-        // Direct CDN stream (e.g. JioSaavn 320kbps stream)
-        final request = http.Request('GET', Uri.parse(song.streamUrl));
+      }
+
+      if (!downloaded) {
+        // Direct CDN stream or candidate stream fallback
+        String? targetUrl = (!song.streamUrl.contains('youtube.com/watch') && !song.streamUrl.contains('youtu.be/'))
+            ? song.streamUrl
+            : null;
+        if (targetUrl == null) {
+          final candidates = await CatalogService.resolvePlayableStreamCandidates(song);
+          if (candidates.isNotEmpty) {
+            targetUrl = candidates.first;
+          }
+        }
+
+        if (targetUrl == null) {
+          throw Exception('No playable audio stream available for download');
+        }
+
+        final request = http.Request('GET', Uri.parse(targetUrl));
+        if (targetUrl.contains('googlevideo.com')) {
+          request.headers.addAll({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://www.youtube.com/',
+          });
+        }
         final response = await http.Client().send(request);
         final total = response.contentLength ?? 0;
         var received = 0;
@@ -127,6 +154,7 @@ class DownloadService {
 
         await output.flush();
         await output.close();
+        downloaded = true;
       }
 
       // Record in storage as downloaded

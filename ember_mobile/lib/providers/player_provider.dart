@@ -223,6 +223,14 @@ class PlayerProvider extends ChangeNotifier {
     _loadLyrics(song);
     _loadRecommendations(song);
     await _audioHandler.playSong(song);
+
+    // Background prefetch next track stream for zero-latency transition
+    if (_currentIndex + 1 < _queue.length) {
+      final nextSong = _queue[_currentIndex + 1];
+      if (nextSong.id.startsWith('yt_')) {
+        YouTubeImporterService.prefetchPlaylistStreams([nextSong]);
+      }
+    }
   }
 
   Future<void> _loadLyrics(Song song) async {

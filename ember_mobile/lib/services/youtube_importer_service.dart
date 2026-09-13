@@ -77,6 +77,69 @@ class YouTubeImporterService {
 
   static final Map<String, ({String url, DateTime cachedAt})> _streamCache = {};
 
+  /// Smart YouTube metadata cleaner: extracts true song title, artist, and clean search query
+  static ({String cleanTitle, String cleanArtist, String searchQuery}) parseYouTubeMetadata(String rawTitle, String rawAuthor) {
+    var t = rawTitle
+        .replaceAll(RegExp(r'\((?:official|music|video|audio|lyrics|hd|4k|visualizer|remastered|lyric|prod\.|feat\.|ft\.).*?\)', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\[(?:official|music|video|audio|lyrics|hd|4k|visualizer|remastered|lyric|prod\.|feat\.|ft\.).*?\]', caseSensitive: false), '')
+        .trim();
+
+    if (t.contains('|')) {
+      t = t.split('|').first.trim();
+    }
+
+    String extractedArtist = '';
+    String extractedTitle = t;
+
+    if (t.contains(' - ') || t.contains(' – ') || t.contains(' — ')) {
+      final delimiter = t.contains(' - ') ? ' - ' : (t.contains(' – ') ? ' – ' : ' — ');
+      final parts = t.split(delimiter);
+      if (parts.length >= 2) {
+        extractedArtist = parts[0].trim();
+        extractedTitle = parts.sublist(1).join(delimiter).trim();
+      }
+    }
+
+    final lowerAuthor = rawAuthor.toLowerCase();
+    final isPublisher = lowerAuthor.contains('vevo') ||
+        lowerAuthor.contains('topic') ||
+        lowerAuthor.contains('records') ||
+        lowerAuthor.contains('record') ||
+        lowerAuthor.contains('music') ||
+        lowerAuthor.contains('series') ||
+        lowerAuthor.contains('studio') ||
+        lowerAuthor.contains('studios') ||
+        lowerAuthor.contains('company') ||
+        lowerAuthor.contains('label') ||
+        lowerAuthor.contains('nation') ||
+        lowerAuthor.contains('clouds') ||
+        lowerAuthor.contains('chill') ||
+        lowerAuthor.contains('sound') ||
+        lowerAuthor.contains('entertainment') ||
+        lowerAuthor.contains('media') ||
+        rawAuthor == 'Unknown Artist';
+
+    String finalArtist = extractedArtist;
+    if (finalArtist.isEmpty && !isPublisher) {
+      finalArtist = rawAuthor.trim();
+    }
+
+    extractedTitle = extractedTitle
+        .replaceAll(RegExp(r'\(.*?\)|\[.*?\]', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\b(?:official|video|audio|lyrics|hd|4k|full song|lyric video)\b', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\b(?:feat\.|ft\.)\s+[A-Za-z0-9\s,&]+', caseSensitive: false), '')
+        .trim();
+
+    if (extractedTitle.isEmpty) extractedTitle = t;
+
+    final searchQuery = finalArtist.isNotEmpty ? '$extractedTitle $finalArtist' : extractedTitle;
+    return (
+      cleanTitle: extractedTitle,
+      cleanArtist: finalArtist,
+      searchQuery: searchQuery,
+    );
+  }
+
   /// Resolve direct playable audio stream URL from a YouTube video ID
   static Future<String?> getAudioStreamUrl(String videoId) async {
     final cleanId = videoId.replaceFirst('yt_', '').trim();
@@ -89,7 +152,7 @@ class YouTubeImporterService {
 
     final yt = YoutubeExplode();
     try {
-      final manifest = await yt.videos.streamsClient.getManifest(cleanId).timeout(const Duration(seconds: 9));
+      final manifest = await yt.videos.streamsClient.getManifest(cleanId).timeout(const Duration(milliseconds: 5000));
 
       // 1. Android hardware decoder preference: MP4 / AAC audio stream (compatible with all devices like Redmi Note 5 Pro)
       final mp4Audio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
@@ -122,6 +185,16 @@ class YouTubeImporterService {
       return null;
     } finally {
       yt.close();
+    }
+  }
+
+  /// Non-blocking prefetch of streams for the first few tracks of a playlist
+  static void prefetchPlaylistStreams(List<Song> songs) {
+    for (final song in songs.take(3)) {
+      final vid = extractVideoId(song.streamUrl) ?? (song.id.startsWith('yt_') ? song.id.replaceFirst('yt_', '') : null);
+      if (vid != null && vid.isNotEmpty) {
+        getAudioStreamUrl(vid).catchError((_) => null);
+      }
     }
   }
 
@@ -187,6 +260,7 @@ class YouTubeImporterService {
                 renderer['title']?['runs']?[0]?['text'] as String? ??
                 'YouTube Track';
             final trackAuthor = renderer['shortBylineText']?['runs']?[0]?['text'] as String? ?? author;
+            final meta = parseYouTubeMetadata(trackTitle, trackAuthor);
             final durText = renderer['lengthText']?['simpleText'] as String?;
             final thumbs = renderer['thumbnail']?['thumbnails'] as List?;
             final art = (thumbs != null && thumbs.isNotEmpty)
@@ -196,8 +270,8 @@ class YouTubeImporterService {
             songs.add(
               Song(
                 id: 'yt_$vId',
-                title: trackTitle,
-                artist: trackAuthor,
+                title: meta.cleanTitle,
+                artist: meta.cleanArtist.isNotEmpty ? meta.cleanArtist : trackAuthor,
                 duration: parseDurationText(durText),
                 artworkUrl: art,
                 streamUrl: 'https://www.youtube.com/watch?v=$vId',
@@ -207,6 +281,7 @@ class YouTubeImporterService {
         }
 
         if (songs.isNotEmpty) {
+          prefetchPlaylistStreams(songs);
           return Playlist(
             id: 'yt_mix_$playlistId',
             title: title,
@@ -265,11 +340,12 @@ class YouTubeImporterService {
                 ? video.thumbnails.highResUrl
                 : video.thumbnails.standardResUrl;
 
+            final meta = parseYouTubeMetadata(video.title, video.author);
             songs.add(
               Song(
                 id: trackId,
-                title: video.title,
-                artist: video.author,
+                title: meta.cleanTitle,
+                artist: meta.cleanArtist.isNotEmpty ? meta.cleanArtist : video.author,
                 duration: video.duration ?? const Duration(minutes: 3, seconds: 30),
                 artworkUrl: artwork,
                 streamUrl: 'https://www.youtube.com/watch?v=${video.id.value}',
@@ -289,6 +365,7 @@ class YouTubeImporterService {
           return const YouTubeImportResult(type: YouTubeImportType.playlist, error: 'No playable tracks found in playlist');
         }
 
+        prefetchPlaylistStreams(songs);
         coverUrl = songs.isNotEmpty ? songs.first.artworkUrl : null;
         final playlist = Playlist(
           id: 'yt_pl_$playlistId',

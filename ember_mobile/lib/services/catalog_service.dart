@@ -343,114 +343,226 @@ class CatalogService {
     return getAllTracks().where((s) => s.id != song.id).take(limit).toList();
   }
 
-  /// Resolves any song's stream URL into a directly playable media stream with multi-tier fallback
-  /// Resolves any song's stream URL into a directly playable media stream with multi-tier fallback
-  static Future<String?> resolvePlayableStream(Song song) async {
-    final s = song.streamUrl;
-    final isYt = s.contains('youtube.com') || s.contains('youtu.be') || song.id.startsWith('yt_');
-    if (!isYt && s.isNotEmpty) {
-      return s;
+  /// Smart YouTube metadata cleaner: extracts true song title, artist, and clean search query
+  static ({String cleanTitle, String cleanArtist, String searchQuery}) parseYouTubeMetadata(String rawTitle, String rawAuthor) {
+    // 1. Remove bracketed / parenthetical video noise
+    var t = rawTitle
+        .replaceAll(RegExp(r'\((?:official|music|video|audio|lyrics|hd|4k|visualizer|remastered|lyric|prod\.|feat\.|ft\.).*?\)', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\[(?:official|music|video|audio|lyrics|hd|4k|visualizer|remastered|lyric|prod\.|feat\.|ft\.).*?\]', caseSensitive: false), '')
+        .trim();
+
+    // Remove movie/album trailers or pipes like "| Brahmāstra", "| Official Video", etc.
+    if (t.contains('|')) {
+      t = t.split('|').first.trim();
     }
 
-    // 1. PRIMARY FOR YOUTUBE TRACKS:
-    // When a song comes from a YouTube Playlist, YouTube Mix, or YouTube search,
-    // ALWAYS resolve the authentic audio stream for that exact video ID directly!
-    // Never hijack with a fuzzy search on another platform that plays random songs.
+    String extractedArtist = '';
+    String extractedTitle = t;
+
+    // 2. Check for "Artist - Title" or "Title - Artist" format
+    if (t.contains(' - ') || t.contains(' – ') || t.contains(' — ')) {
+      final delimiter = t.contains(' - ') ? ' - ' : (t.contains(' – ') ? ' – ' : ' — ');
+      final parts = t.split(delimiter);
+      if (parts.length >= 2) {
+        extractedArtist = parts[0].trim();
+        extractedTitle = parts.sublist(1).join(delimiter).trim();
+      }
+    }
+
+    // 3. Detect if rawAuthor is a publisher / record company / channel
+    final lowerAuthor = rawAuthor.toLowerCase();
+    final isPublisher = lowerAuthor.contains('vevo') ||
+        lowerAuthor.contains('topic') ||
+        lowerAuthor.contains('records') ||
+        lowerAuthor.contains('record') ||
+        lowerAuthor.contains('music') ||
+        lowerAuthor.contains('series') ||
+        lowerAuthor.contains('studio') ||
+        lowerAuthor.contains('studios') ||
+        lowerAuthor.contains('company') ||
+        lowerAuthor.contains('label') ||
+        lowerAuthor.contains('nation') ||
+        lowerAuthor.contains('clouds') ||
+        lowerAuthor.contains('chill') ||
+        lowerAuthor.contains('sound') ||
+        lowerAuthor.contains('entertainment') ||
+        lowerAuthor.contains('media') ||
+        rawAuthor == 'Unknown Artist';
+
+    String finalArtist = extractedArtist;
+    if (finalArtist.isEmpty && !isPublisher) {
+      finalArtist = rawAuthor.trim();
+    }
+
+    // Further clean extracted title
+    extractedTitle = extractedTitle
+        .replaceAll(RegExp(r'\(.*?\)|\[.*?\]', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\b(?:official|video|audio|lyrics|hd|4k|full song|lyric video)\b', caseSensitive: false), '')
+        .replaceAll(RegExp(r'\b(?:feat\.|ft\.)\s+[A-Za-z0-9\s,&]+', caseSensitive: false), '')
+        .trim();
+
+    if (extractedTitle.isEmpty) extractedTitle = t;
+
+    final searchQuery = finalArtist.isNotEmpty ? '$extractedTitle $finalArtist' : extractedTitle;
+    return (
+      cleanTitle: extractedTitle,
+      cleanArtist: finalArtist,
+      searchQuery: searchQuery,
+    );
+  }
+
+  /// High-confidence verification between target track and streaming result
+  static bool verifyMatch({
+    required String targetTitle,
+    required String targetArtist,
+    required String candidateTitle,
+    required String candidateArtist,
+  }) {
+    String normalize(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+    final normTargetTitle = normalize(targetTitle);
+    final normCandTitle = normalize(candidateTitle);
+
+    if (normTargetTitle.isEmpty || normCandTitle.isEmpty) return false;
+
+    // Direct containment or equality
+    bool titleMatches = normTargetTitle == normCandTitle ||
+        normCandTitle.contains(normTargetTitle) ||
+        normTargetTitle.contains(normCandTitle);
+
+    if (!titleMatches) {
+      // Check significant word token overlap
+      final targetTokens = targetTitle.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toSet();
+      final candTokens = candidateTitle.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toSet();
+      if (targetTokens.isNotEmpty && candTokens.isNotEmpty) {
+        final intersection = targetTokens.intersection(candTokens);
+        if (intersection.length >= (targetTokens.length * 0.5).ceil()) {
+          titleMatches = true;
+        }
+      }
+    }
+
+    if (!titleMatches) return false;
+
+    // Artist verification: if target artist is identified, ensure candidate artist has common tokens
+    final normTargetArtist = normalize(targetArtist);
+    final normCandArtist = normalize(candidateArtist);
+
+    if (normTargetArtist.isNotEmpty) {
+      final artistTokens = targetArtist.toLowerCase().split(RegExp(r'[\s,&x]+')).where((w) => w.length > 2).toList();
+      if (artistTokens.isNotEmpty) {
+        final matchesAny = artistTokens.any((token) =>
+            normCandArtist.contains(normalize(token)) || normCandTitle.contains(normalize(token)));
+        if (!matchesAny) return false;
+      }
+    }
+
+    return true;
+  }
+
+  /// Resolves an ordered list of viable playable streams for a song
+  static Future<List<String>> resolvePlayableStreamCandidates(Song song) async {
+    final candidates = <String>[];
+    final s = song.streamUrl;
+    final isYt = s.contains('youtube.com') || s.contains('youtu.be') || song.id.startsWith('yt_');
+
+    // If already a direct non-YouTube stream or local file, return immediately
+    if (!isYt && s.isNotEmpty && !s.contains('youtube.com/watch')) {
+      return [s];
+    }
+
+    // 1. PRIMARY: Direct authentic YouTube audio stream
     if (isYt) {
       try {
         final ytStream = await YouTubeImporterService.resolvePlayableUrl(song);
         if (ytStream != null && ytStream.isNotEmpty) {
-          debugPrint('Resolved authentic YouTube audio stream for: "${song.title}"');
-          return ytStream;
+          candidates.add(ytStream);
         }
       } catch (e) {
-        debugPrint('Direct YouTube stream resolution error for "${song.title}": $e');
+        debugPrint('Direct YouTube stream extraction error for "${song.title}": $e');
       }
     }
 
-    // 2. High-Confidence Fallback (only if direct YouTube extraction fails or was non-YouTube):
-    // Perform a verified match on JioSaavn or iTunes, strictly verifying that the result matches BOTH title and artist.
-    final cleanTitle = song.title
-        .replaceAll(RegExp(r'\(.*?\)|\[.*?\]|Official|Music|Video|Audio|HD|4K|Lyrics|Visualizer', caseSensitive: false), '')
-        .trim();
-    final cleanArtist = (song.artist == 'Unknown Artist' ||
-            song.artist.toLowerCase().contains('topic') ||
-            song.artist.toLowerCase().contains('vevo'))
-        ? ''
-        : song.artist.trim();
+    // 2. SECONDARY: High-Fidelity 320kbps JioSaavn verified match
+    final meta = parseYouTubeMetadata(song.title, song.artist);
+    final queries = [meta.searchQuery, meta.cleanTitle];
 
-    bool isVerifiedMatch(String resultTitle, String resultArtist) {
-      final t1 = cleanTitle.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-      final t2 = resultTitle.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-      if (t1.isEmpty || t2.isEmpty) return false;
-      final titleMatches = t1 == t2 || t1.contains(t2) || t2.contains(t1);
-      if (!titleMatches) return false;
-
-      if (cleanArtist.isNotEmpty) {
-        final a1 = cleanArtist.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-        final a2 = resultArtist.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-        if (a1.isNotEmpty && a2.isNotEmpty && !a1.contains(a2) && !a2.contains(a1)) {
-          return false;
-        }
-      }
-      return true;
-    }
-
-    final query = cleanArtist.isNotEmpty ? '$cleanTitle $cleanArtist' : cleanTitle;
-
-    // 2a. Verified JioSaavn fallback
-    try {
-      final saavnUrl = Uri.parse(
-        'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&includeMetaTags=1&p=1&n=5&q=${Uri.encodeComponent(query)}',
-      );
-      final resp = await http.get(saavnUrl, headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(seconds: 4));
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final list = data['results'] as List? ?? [];
-        for (final item in list) {
-          final resTitle = (item['title'] ?? item['song']) as String? ?? '';
-          final resArtist = (item['more_info']?['artistMap']?['primary_artists']?[0]?['name'] ?? item['primary_artists']) as String? ?? '';
-          if (isVerifiedMatch(resTitle, resArtist)) {
-            final enc = item['encrypted_media_url'] as String?;
-            if (enc != null && enc.isNotEmpty) {
-              final stream = decryptMediaUrl(enc);
-              if (stream != null && stream.isNotEmpty) {
-                debugPrint('Resolved track "${song.title}" via verified Saavn match');
-                return stream;
+    for (final query in queries) {
+      if (candidates.length >= 2) break;
+      try {
+        final saavnUrl = Uri.parse(
+          'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&includeMetaTags=1&p=1&n=5&q=${Uri.encodeComponent(query)}',
+        );
+        final resp = await http.get(saavnUrl, headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(seconds: 4));
+        if (resp.statusCode == 200) {
+          final data = jsonDecode(resp.body) as Map<String, dynamic>;
+          final list = data['results'] as List? ?? [];
+          for (final item in list) {
+            final resTitle = _unescape(item['title'] ?? item['song']);
+            final resArtist = _unescape(item['more_info']?['artistMap']?['primary_artists']?[0]?['name'] ?? item['primary_artists']);
+            if (verifyMatch(
+              targetTitle: meta.cleanTitle,
+              targetArtist: meta.cleanArtist,
+              candidateTitle: resTitle,
+              candidateArtist: resArtist,
+            )) {
+              final enc = item['encrypted_media_url'] as String?;
+              if (enc != null && enc.isNotEmpty) {
+                final stream = decryptMediaUrl(enc);
+                if (stream != null && stream.isNotEmpty && !candidates.contains(stream)) {
+                  candidates.add(stream);
+                  break;
+                }
               }
             }
           }
         }
+      } catch (e) {
+        debugPrint('Saavn candidate resolution error: $e');
       }
-    } catch (e) {
-      debugPrint('Saavn fallback error: $e');
     }
 
-    // 2b. Verified iTunes fallback
-    try {
-      final itunesUrl = Uri.parse(
-        'https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=song&limit=5',
-      );
-      final resp = await http.get(itunesUrl).timeout(const Duration(seconds: 4));
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final list = data['results'] as List? ?? [];
-        for (final item in list) {
-          final resTitle = item['trackName'] as String? ?? '';
-          final resArtist = item['artistName'] as String? ?? '';
-          if (isVerifiedMatch(resTitle, resArtist)) {
-            final prev = item['previewUrl'] as String?;
-            if (prev != null && prev.isNotEmpty) {
-              debugPrint('Resolved track "${song.title}" via verified iTunes match');
-              return prev;
+    // 3. TERTIARY: Global iTunes verified match
+    if (candidates.length < 2) {
+      try {
+        final itunesUrl = Uri.parse(
+          'https://itunes.apple.com/search?term=${Uri.encodeComponent(meta.searchQuery)}&entity=song&limit=5',
+        );
+        final resp = await http.get(itunesUrl).timeout(const Duration(seconds: 4));
+        if (resp.statusCode == 200) {
+          final data = jsonDecode(resp.body) as Map<String, dynamic>;
+          final list = data['results'] as List? ?? [];
+          for (final item in list) {
+            final resTitle = item['trackName'] as String? ?? '';
+            final resArtist = item['artistName'] as String? ?? '';
+            if (verifyMatch(
+              targetTitle: meta.cleanTitle,
+              targetArtist: meta.cleanArtist,
+              candidateTitle: resTitle,
+              candidateArtist: resArtist,
+            )) {
+              final prev = item['previewUrl'] as String?;
+              if (prev != null && prev.isNotEmpty && !candidates.contains(prev)) {
+                candidates.add(prev);
+                break;
+              }
             }
           }
         }
+      } catch (e) {
+        debugPrint('iTunes candidate resolution error: $e');
       }
-    } catch (e) {
-      debugPrint('iTunes fallback error: $e');
     }
 
+    return candidates;
+  }
+
+  /// Resolves any song's stream URL into a directly playable media stream
+  static Future<String?> resolvePlayableStream(Song song) async {
+    final candidates = await resolvePlayableStreamCandidates(song);
+    if (candidates.isNotEmpty) {
+      return candidates.first;
+    }
     return null;
   }
 

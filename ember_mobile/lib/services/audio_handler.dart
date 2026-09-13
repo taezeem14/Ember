@@ -127,34 +127,61 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     );
 
     try {
-      String? streamUrl = song.streamUrl;
-      if (streamUrl.contains('youtube.com') ||
-          streamUrl.contains('youtu.be') ||
-          song.id.startsWith('yt_')) {
-        streamUrl = await CatalogService.resolvePlayableStream(song);
-      }
+      final s = song.streamUrl;
+      final isLocal = s.startsWith('/') || s.startsWith('file://');
 
-      if (streamUrl == null ||
-          streamUrl.isEmpty ||
-          streamUrl.contains('youtube.com/watch') ||
-          streamUrl.contains('youtu.be/')) {
-        debugPrint('Cannot play track "${song.title}": audio stream could not be resolved');
-        return;
-      }
-
-      if (streamUrl.startsWith('/') || streamUrl.startsWith('file://')) {
-        // Local offline file
-        final localPath = streamUrl.replaceFirst('file://', '');
+      if (isLocal) {
+        final localPath = s.replaceFirst('file://', '');
         final file = File(localPath);
         if (await file.exists()) {
           await _player.setFilePath(localPath);
         } else {
-          await _player.setUrl(streamUrl);
+          await _player.setUrl(s);
         }
-      } else {
-        await _player.setUrl(streamUrl);
+        await _player.play();
+        await _updateAudioEffects();
+        if (_eqEnabled) {
+          await applyEqualizerPreset(_currentPreset);
+        }
+        return;
       }
-      await _player.play();
+
+      // Online stream resolution with resilient candidate fallbacks
+      final candidates = await CatalogService.resolvePlayableStreamCandidates(song);
+      if (candidates.isEmpty && s.isNotEmpty && !s.contains('youtube.com/watch') && !s.contains('youtu.be/')) {
+        candidates.add(s);
+      }
+
+      bool started = false;
+      for (final url in candidates) {
+        if (url.isEmpty || url.contains('youtube.com/watch') || url.contains('youtu.be/')) continue;
+        try {
+          if (url.contains('googlevideo.com')) {
+            await _player.setUrl(
+              url,
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.youtube.com/',
+              },
+            );
+          } else {
+            await _player.setUrl(url);
+          }
+          await _player.play();
+          started = true;
+          debugPrint('Successfully playing "${song.title}" via: ${url.substring(0, url.length > 50 ? 50 : url.length)}...');
+          break;
+        } catch (e) {
+          debugPrint('Candidate stream failed for "${song.title}": $e. Trying next candidate...');
+        }
+      }
+
+      if (!started) {
+        debugPrint('All stream candidates failed for "${song.title}". Auto-advancing to next track...');
+        _onCompleted?.call();
+        return;
+      }
+
       // Re-apply audio effects & preset on newly initialized AudioTrack
       await _updateAudioEffects();
       if (_eqEnabled) {

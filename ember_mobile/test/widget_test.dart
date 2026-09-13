@@ -283,6 +283,73 @@ void main() {
       expect(resolved, equals('https://c.saavncdn.com/test.mp4'));
     });
 
+    test('CatalogService.parseYouTubeMetadata correctly parses titles and filters publisher channels', () {
+      final meta1 = CatalogService.parseYouTubeMetadata(
+        'The Weeknd - Blinding Lights (Official Audio)',
+        'The Weeknd',
+      );
+      expect(meta1.cleanTitle, 'Blinding Lights');
+      expect(meta1.cleanArtist, 'The Weeknd');
+
+      final meta2 = CatalogService.parseYouTubeMetadata(
+        'Arijit Singh - Kesariya | Brahmāstra',
+        'Sony Music India',
+      );
+      expect(meta2.cleanTitle, 'Kesariya');
+      expect(meta2.cleanArtist, 'Arijit Singh');
+
+      final meta3 = CatalogService.parseYouTubeMetadata(
+        'Calm Down',
+        'Rema - Topic',
+      );
+      expect(meta3.cleanTitle, 'Calm Down');
+      expect(meta3.cleanArtist, '');
+    });
+
+    test('CatalogService.verifyMatch correctly identifies authentic matches and rejects false positives', () {
+      // Positive matches
+      expect(
+        CatalogService.verifyMatch(
+          targetTitle: 'Blinding Lights',
+          targetArtist: 'The Weeknd',
+          candidateTitle: 'Blinding Lights',
+          candidateArtist: 'The Weeknd',
+        ),
+        isTrue,
+      );
+
+      expect(
+        CatalogService.verifyMatch(
+          targetTitle: 'Kesariya',
+          targetArtist: 'Arijit Singh',
+          candidateTitle: 'Kesariya (From "Brahmastra")',
+          candidateArtist: 'Amitabh Bhattacharya, Pritam, Arijit Singh',
+        ),
+        isTrue,
+      );
+
+      // Negative matches (reject random popular tracks)
+      expect(
+        CatalogService.verifyMatch(
+          targetTitle: 'Blinding Lights',
+          targetArtist: 'The Weeknd',
+          candidateTitle: 'Starboy',
+          candidateArtist: 'The Weeknd',
+        ),
+        isFalse,
+      );
+
+      expect(
+        CatalogService.verifyMatch(
+          targetTitle: 'Kesariya',
+          targetArtist: 'Arijit Singh',
+          candidateTitle: 'Apna Bana Le',
+          candidateArtist: 'Arijit Singh',
+        ),
+        isFalse,
+      );
+    });
+
   });
 }
 
