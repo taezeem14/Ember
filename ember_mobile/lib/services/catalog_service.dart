@@ -344,6 +344,7 @@ class CatalogService {
   }
 
   /// Resolves any song's stream URL into a directly playable media stream with multi-tier fallback
+  /// Resolves any song's stream URL into a directly playable media stream with multi-tier fallback
   static Future<String?> resolvePlayableStream(Song song) async {
     final s = song.streamUrl;
     final isYt = s.contains('youtube.com') || s.contains('youtu.be') || song.id.startsWith('yt_');
@@ -351,6 +352,24 @@ class CatalogService {
       return s;
     }
 
+    // 1. PRIMARY FOR YOUTUBE TRACKS:
+    // When a song comes from a YouTube Playlist, YouTube Mix, or YouTube search,
+    // ALWAYS resolve the authentic audio stream for that exact video ID directly!
+    // Never hijack with a fuzzy search on another platform that plays random songs.
+    if (isYt) {
+      try {
+        final ytStream = await YouTubeImporterService.resolvePlayableUrl(song);
+        if (ytStream != null && ytStream.isNotEmpty) {
+          debugPrint('Resolved authentic YouTube audio stream for: "${song.title}"');
+          return ytStream;
+        }
+      } catch (e) {
+        debugPrint('Direct YouTube stream resolution error for "${song.title}": $e');
+      }
+    }
+
+    // 2. High-Confidence Fallback (only if direct YouTube extraction fails or was non-YouTube):
+    // Perform a verified match on JioSaavn or iTunes, strictly verifying that the result matches BOTH title and artist.
     final cleanTitle = song.title
         .replaceAll(RegExp(r'\(.*?\)|\[.*?\]|Official|Music|Video|Audio|HD|4K|Lyrics|Visualizer', caseSensitive: false), '')
         .trim();
@@ -359,85 +378,77 @@ class CatalogService {
             song.artist.toLowerCase().contains('vevo'))
         ? ''
         : song.artist.trim();
+
+    bool isVerifiedMatch(String resultTitle, String resultArtist) {
+      final t1 = cleanTitle.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      final t2 = resultTitle.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (t1.isEmpty || t2.isEmpty) return false;
+      final titleMatches = t1 == t2 || t1.contains(t2) || t2.contains(t1);
+      if (!titleMatches) return false;
+
+      if (cleanArtist.isNotEmpty) {
+        final a1 = cleanArtist.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        final a2 = resultArtist.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        if (a1.isNotEmpty && a2.isNotEmpty && !a1.contains(a2) && !a2.contains(a1)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
     final query = cleanArtist.isNotEmpty ? '$cleanTitle $cleanArtist' : cleanTitle;
 
-    // 1. High-speed primary: Query JioSaavn full-length 320kbps catalogue
+    // 2a. Verified JioSaavn fallback
     try {
       final saavnUrl = Uri.parse(
-        'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&includeMetaTags=1&p=1&n=3&q=${Uri.encodeComponent(query)}',
+        'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&includeMetaTags=1&p=1&n=5&q=${Uri.encodeComponent(query)}',
       );
       final resp = await http.get(saavnUrl, headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(seconds: 4));
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final list = data['results'] as List? ?? [];
         for (final item in list) {
-          final enc = item['encrypted_media_url'] as String?;
-          if (enc != null && enc.isNotEmpty) {
-            final stream = decryptMediaUrl(enc);
-            if (stream != null && stream.isNotEmpty) {
-              debugPrint('Resolved YouTube track "${song.title}" via Saavn 320kbps CDN');
-              return stream;
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Saavn resolve error: $e');
-    }
-
-    // 1b. If artist was present, try title only on Saavn
-    if (cleanArtist.isNotEmpty) {
-      try {
-        final saavnUrl2 = Uri.parse(
-          'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&includeMetaTags=1&p=1&n=3&q=${Uri.encodeComponent(cleanTitle)}',
-        );
-        final resp2 = await http.get(saavnUrl2, headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(seconds: 3));
-        if (resp2.statusCode == 200) {
-          final data2 = jsonDecode(resp2.body) as Map<String, dynamic>;
-          final list2 = data2['results'] as List? ?? [];
-          for (final item in list2) {
+          final resTitle = (item['title'] ?? item['song']) as String? ?? '';
+          final resArtist = (item['more_info']?['artistMap']?['primary_artists']?[0]?['name'] ?? item['primary_artists']) as String? ?? '';
+          if (isVerifiedMatch(resTitle, resArtist)) {
             final enc = item['encrypted_media_url'] as String?;
             if (enc != null && enc.isNotEmpty) {
               final stream = decryptMediaUrl(enc);
               if (stream != null && stream.isNotEmpty) {
-                debugPrint('Resolved YouTube track "${song.title}" via Saavn title-only CDN');
+                debugPrint('Resolved track "${song.title}" via verified Saavn match');
                 return stream;
               }
             }
           }
         }
-      } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('Saavn fallback error: $e');
     }
 
-    // 2. Secondary fallback: Global iTunes catalogue (proven reliable audio streaming)
+    // 2b. Verified iTunes fallback
     try {
       final itunesUrl = Uri.parse(
-        'https://itunes.apple.com/search?term=${Uri.encodeComponent(cleanTitle.isNotEmpty ? cleanTitle : song.title)}&entity=song&limit=3',
+        'https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&entity=song&limit=5',
       );
       final resp = await http.get(itunesUrl).timeout(const Duration(seconds: 4));
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final list = data['results'] as List? ?? [];
         for (final item in list) {
-          final prev = item['previewUrl'] as String?;
-          if (prev != null && prev.isNotEmpty) {
-            debugPrint('Resolved track "${song.title}" via iTunes fallback');
-            return prev;
+          final resTitle = item['trackName'] as String? ?? '';
+          final resArtist = item['artistName'] as String? ?? '';
+          if (isVerifiedMatch(resTitle, resArtist)) {
+            final prev = item['previewUrl'] as String?;
+            if (prev != null && prev.isNotEmpty) {
+              debugPrint('Resolved track "${song.title}" via verified iTunes match');
+              return prev;
+            }
           }
         }
       }
     } catch (e) {
-      debugPrint('iTunes resolve error: $e');
-    }
-
-    // 3. Tertiary fallback: YouTube MP4 stream extraction
-    try {
-      final ytStream = await YouTubeImporterService.resolvePlayableUrl(song);
-      if (ytStream != null && ytStream.isNotEmpty) {
-        return ytStream;
-      }
-    } catch (e) {
-      debugPrint('YouTube stream extraction error: $e');
+      debugPrint('iTunes fallback error: $e');
     }
 
     return null;

@@ -75,25 +75,28 @@ class YouTubeImporterService {
     return const Duration(minutes: 3, seconds: 30);
   }
 
-  static final Map<String, String> _streamCache = {};
+  static final Map<String, ({String url, DateTime cachedAt})> _streamCache = {};
 
   /// Resolve direct playable audio stream URL from a YouTube video ID
   static Future<String?> getAudioStreamUrl(String videoId) async {
     final cleanId = videoId.replaceFirst('yt_', '').trim();
     if (cleanId.isEmpty) return null;
-    if (_streamCache.containsKey(cleanId)) {
-      return _streamCache[cleanId];
+
+    final cached = _streamCache[cleanId];
+    if (cached != null && DateTime.now().difference(cached.cachedAt).inHours < 4) {
+      return cached.url;
     }
+
     final yt = YoutubeExplode();
     try {
-      final manifest = await yt.videos.streamsClient.getManifest(cleanId).timeout(const Duration(seconds: 6));
+      final manifest = await yt.videos.streamsClient.getManifest(cleanId).timeout(const Duration(seconds: 9));
 
       // 1. Android hardware decoder preference: MP4 / AAC audio stream (compatible with all devices like Redmi Note 5 Pro)
       final mp4Audio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
       if (mp4Audio.isNotEmpty) {
         final audioStream = mp4Audio.withHighestBitrate();
         final url = audioStream.url.toString();
-        _streamCache[cleanId] = url;
+        _streamCache[cleanId] = (url: url, cachedAt: DateTime.now());
         return url;
       }
 
@@ -102,7 +105,7 @@ class YouTubeImporterService {
       if (muxedMp4.isNotEmpty) {
         final stream = muxedMp4.withHighestBitrate();
         final url = stream.url.toString();
-        _streamCache[cleanId] = url;
+        _streamCache[cleanId] = (url: url, cachedAt: DateTime.now());
         return url;
       }
 
@@ -110,12 +113,12 @@ class YouTubeImporterService {
       if (manifest.audioOnly.isNotEmpty) {
         final audioStream = manifest.audioOnly.withHighestBitrate();
         final url = audioStream.url.toString();
-        _streamCache[cleanId] = url;
+        _streamCache[cleanId] = (url: url, cachedAt: DateTime.now());
         return url;
       }
       return null;
     } catch (e) {
-      debugPrint('Error resolving YouTube audio stream: $e');
+      debugPrint('Error resolving YouTube audio stream for $cleanId: $e');
       return null;
     } finally {
       yt.close();

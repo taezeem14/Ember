@@ -40,12 +40,16 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   AsyncCallback? _onSkipPrevious;
   AsyncCallback? _onCompleted;
 
+  bool _eqEnabled = true;
+  double _bassBoost = 0.35;
+  String _currentPreset = 'Warm Tape';
+
   EmberAudioHandler() {
     _player = AudioPlayer(
       audioPipeline: AudioPipeline(
         androidAudioEffects: [
-          _loudnessEnhancer,
           _equalizer,
+          _loudnessEnhancer,
         ],
       ),
     );
@@ -151,121 +155,149 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         await _player.setUrl(streamUrl);
       }
       await _player.play();
-
+      // Re-apply audio effects & preset on newly initialized AudioTrack
+      await _updateAudioEffects();
+      if (_eqEnabled) {
+        await applyEqualizerPreset(_currentPreset);
+      }
     } catch (e) {
       debugPrint('Playback error: $e');
     }
   }
 
-
-  // Equalizer & Audio Shaping Controls
-  Future<void> setEqualizerEnabled(bool enabled) async {
+  // Equalizer & Audio Shaping Controls with Dynamic Hardware Makeup Gain
+  Future<void> _updateAudioEffects() async {
     try {
-      await _equalizer.setEnabled(enabled);
-    } catch (_) {}
+      await _equalizer.setEnabled(_eqEnabled);
+      if (_eqEnabled) {
+        // Android's native Equalizer HAL applies 6-12 dB of internal digital attenuation to avoid clipping.
+        // To prevent the sound from being suppressed when EQ is enabled, we engage Android's hardware LoudnessEnhancer
+        // as an intelligent makeup gain stage (+5.0 dB to +8.5 dB), giving full punch, volume parity, and analog warmth.
+        final makeupGain = (0.50 + (_bassBoost * 0.35)).clamp(0.2, 1.0);
+        await _loudnessEnhancer.setTargetGain(makeupGain);
+        await _loudnessEnhancer.setEnabled(true);
+      } else {
+        // When EQ is disabled, restore transparent flat output so volume transitions smoothly
+        if (_bassBoost > 0.05) {
+          await _loudnessEnhancer.setTargetGain((_bassBoost * 0.35).clamp(0.0, 1.0));
+          await _loudnessEnhancer.setEnabled(true);
+        } else {
+          await _loudnessEnhancer.setEnabled(false);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error updating audio effects: $e');
+    }
+  }
+
+  Future<void> setEqualizerEnabled(bool enabled) async {
+    _eqEnabled = enabled;
+    await _updateAudioEffects();
+    if (_eqEnabled) {
+      await applyEqualizerPreset(_currentPreset);
+    }
   }
 
   Future<void> setBassBoost(double gain) async {
-    try {
-      await _loudnessEnhancer.setTargetGain(gain.clamp(-1.0, 1.0));
-      await _loudnessEnhancer.setEnabled(gain.abs() > 0.01);
-    } catch (_) {}
+    _bassBoost = gain;
+    await _updateAudioEffects();
   }
 
   Future<void> setBandGain(int bandIndex, double gain) async {
     try {
       final params = await _equalizer.parameters;
       if (bandIndex >= 0 && bandIndex < params.bands.length) {
-        await params.bands[bandIndex].setGain(gain);
+        final clamped = gain.clamp(params.minDecibels, params.maxDecibels);
+        await params.bands[bandIndex].setGain(clamped);
       }
     } catch (_) {}
   }
 
   Future<void> applyEqualizerPreset(String preset) async {
+    _currentPreset = preset;
     try {
       final params = await _equalizer.parameters;
       final bands = params.bands;
       final n = bands.length;
       if (n == 0) return;
 
+      final minDb = params.minDecibels;
+      final maxDb = params.maxDecibels;
+      double clampGain(double g) => g.clamp(minDb, maxDb);
+
       switch (preset) {
         case 'Warm Tape':
-          // Analog warmth: boosted bass and low mids, smooth rolled-off top end
+          // Analog warmth: boosted bass and low mids, gentle top end, no volume-killing cuts
           for (int i = 0; i < n; i++) {
             if (i == 0) {
-              await bands[i].setGain(3.0);
+              await bands[i].setGain(clampGain(2.5));
             } else if (i == 1) {
-              await bands[i].setGain(2.0);
+              await bands[i].setGain(clampGain(1.5));
             } else if (i == n - 1) {
-              await bands[i].setGain(-2.0);
+              await bands[i].setGain(clampGain(0.5));
             } else {
-              await bands[i].setGain(0.0);
+              await bands[i].setGain(clampGain(0.5));
             }
           }
-          await setBassBoost(0.4);
           break;
         case 'Lo-Fi':
-          // Bandpass filter simulation: cut sub-bass, punchy mids, damped treble
+          // Warm analog mids and soft roll-off without hollowing out the track
           for (int i = 0; i < n; i++) {
             if (i == 0) {
-              await bands[i].setGain(-3.5);
+              await bands[i].setGain(clampGain(0.5));
             } else if (i == 1 || i == 2) {
-              await bands[i].setGain(3.0);
+              await bands[i].setGain(clampGain(2.5));
             } else if (i >= n - 2) {
-              await bands[i].setGain(-4.0);
+              await bands[i].setGain(clampGain(0.5));
             } else {
-              await bands[i].setGain(1.0);
+              await bands[i].setGain(clampGain(1.0));
             }
           }
-          await setBassBoost(0.2);
           break;
         case 'Bass Boost':
-          // Heavy punch: sub and mid-bass elevated
+          // Deep, punchy sub and mid bass with crystal clarity
           for (int i = 0; i < n; i++) {
             if (i == 0) {
-              await bands[i].setGain(6.0);
+              await bands[i].setGain(clampGain(4.5));
             } else if (i == 1) {
-              await bands[i].setGain(4.0);
+              await bands[i].setGain(clampGain(3.0));
             } else {
-              await bands[i].setGain(0.0);
+              await bands[i].setGain(clampGain(0.5));
             }
           }
-          await setBassBoost(0.75);
           break;
         case 'Vocal Air':
-          // Crisp vocals & acoustic shimmer: slight bass cut, high-mid and air boost
+          // Sparkling vocals, crisp presence, airy treble with solid low-end foundation
           for (int i = 0; i < n; i++) {
             if (i == 0) {
-              await bands[i].setGain(-1.5);
+              await bands[i].setGain(clampGain(0.5));
             } else if (i >= n - 2) {
-              await bands[i].setGain(4.5);
+              await bands[i].setGain(clampGain(3.0));
             } else {
-              await bands[i].setGain(1.5);
+              await bands[i].setGain(clampGain(1.5));
             }
           }
-          await setBassBoost(0.0);
           break;
         case 'Acoustic':
-          // Warm body with airy strings
+          // Warm resonance and articulate strings
           for (int i = 0; i < n; i++) {
             if (i == 0) {
-              await bands[i].setGain(2.5);
+              await bands[i].setGain(clampGain(2.0));
             } else if (i == n - 1) {
-              await bands[i].setGain(3.0);
+              await bands[i].setGain(clampGain(2.5));
             } else {
-              await bands[i].setGain(0.5);
+              await bands[i].setGain(clampGain(1.0));
             }
           }
-          await setBassBoost(0.25);
           break;
         case 'Flat':
         default:
           for (int i = 0; i < n; i++) {
-            await bands[i].setGain(0.0);
+            await bands[i].setGain(clampGain(0.0));
           }
-          await setBassBoost(0.0);
           break;
       }
+      await _updateAudioEffects();
     } catch (e) {
       debugPrint('Apply preset error: $e');
     }
