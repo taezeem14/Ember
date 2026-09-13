@@ -287,6 +287,22 @@ class PlayerProvider extends ChangeNotifier {
     }
   }
 
+  /// Completely halt playback, dismiss active song, and return to no song playing state
+  Future<void> stopPlayback() async {
+    try {
+      await _audioHandler.stop();
+    } catch (_) {}
+    _currentIndex = -1;
+    _isPlaying = false;
+    _position = Duration.zero;
+    _duration = Duration.zero;
+    _lyrics = LyricsResult.empty;
+    _isLoadingLyrics = false;
+    notifyListeners();
+  }
+
+
+
   Future<void> skipNext() async {
     if (_queue.isEmpty) return;
     if (_repeatMode == 'one') {

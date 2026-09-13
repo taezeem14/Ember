@@ -9,6 +9,8 @@ import 'package:ember_mobile/services/lyrics_service.dart';
 import 'package:ember_mobile/theme/ember_theme.dart';
 import 'package:ember_mobile/widgets/ambient_glow.dart';
 import 'package:ember_mobile/widgets/vinyl_disc.dart';
+import 'package:ember_mobile/screens/settings_screen.dart';
+
 
 void main() {
   setUpAll(() {
@@ -267,5 +269,20 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.byType(AmbientGlow), findsOneWidget);
     });
+
+    test('CatalogService.resolvePlayableStream preserves non-YouTube direct streams', () async {
+      const directSong = Song(
+        id: 'direct_1',
+        title: 'Direct Track',
+        artist: 'Artist',
+        duration: Duration(minutes: 3),
+        artworkUrl: 'https://example.com/art.jpg',
+        streamUrl: 'https://c.saavncdn.com/test.mp4',
+      );
+      final resolved = await CatalogService.resolvePlayableStream(directSong);
+      expect(resolved, equals('https://c.saavncdn.com/test.mp4'));
+    });
+
   });
 }
+

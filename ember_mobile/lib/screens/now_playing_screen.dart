@@ -34,10 +34,38 @@ class _NowPlayingScreenState extends State<NowPlayingScreen> {
     if (song == null) {
       return Scaffold(
         backgroundColor: EmberColors.obsidianBase,
-        appBar: AppBar(leading: const BackButton()),
-        body: const Center(child: Text('No song selected')),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          leading: IconButton(
+            icon: const FaIcon(FontAwesomeIcons.chevronDown, size: 20, color: EmberColors.textPrimary),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const FaIcon(FontAwesomeIcons.music, size: 48, color: EmberColors.textMuted),
+              const SizedBox(height: 16),
+              const Text('No song playing', style: TextStyle(color: EmberColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              const Text('Playback has been stopped', style: TextStyle(color: EmberColors.textMuted, fontSize: 13)),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: EmberColors.primaryAmber,
+                  foregroundColor: EmberColors.obsidianBase,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Back to Home', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ),
       );
     }
+
 
     final elapsed = player.position;
     final total = player.duration;

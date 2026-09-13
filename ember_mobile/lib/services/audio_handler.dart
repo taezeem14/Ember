@@ -3,7 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
-import 'youtube_importer_service.dart';
+import 'catalog_service.dart';
+
 
 Future<AudioHandler> initAudioHandler() async {
   try {
@@ -122,14 +123,19 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     );
 
     try {
-      String streamUrl = song.streamUrl;
+      String? streamUrl = song.streamUrl;
       if (streamUrl.contains('youtube.com') ||
           streamUrl.contains('youtu.be') ||
           song.id.startsWith('yt_')) {
-        final resolved = await YouTubeImporterService.resolvePlayableUrl(song);
-        if (resolved.isNotEmpty) {
-          streamUrl = resolved;
-        }
+        streamUrl = await CatalogService.resolvePlayableStream(song);
+      }
+
+      if (streamUrl == null ||
+          streamUrl.isEmpty ||
+          streamUrl.contains('youtube.com/watch') ||
+          streamUrl.contains('youtu.be/')) {
+        debugPrint('Cannot play track "${song.title}": audio stream could not be resolved');
+        return;
       }
 
       if (streamUrl.startsWith('/') || streamUrl.startsWith('file://')) {
@@ -142,16 +148,21 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
           await _player.setUrl(streamUrl);
         }
       } else {
-        await _player.setUrl(streamUrl);
+        await _player.setUrl(
+          streamUrl,
+          headers: const {
+            'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://www.youtube.com/',
+          },
+        );
       }
       await _player.play();
     } catch (e) {
       debugPrint('Playback error: $e');
-      try {
-        await _player.play();
-      } catch (_) {}
     }
   }
+
 
   // Equalizer & Audio Shaping Controls
   Future<void> setEqualizerEnabled(bool enabled) async {
@@ -294,7 +305,16 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
 
   @override
   Future<void> stop() async {
+    _currentSong = null;
+    mediaItem.add(null);
+    playbackState.add(
+      playbackState.value.copyWith(
+        processingState: AudioProcessingState.idle,
+        playing: false,
+      ),
+    );
     await _player.stop();
     await super.stop();
   }
+
 }

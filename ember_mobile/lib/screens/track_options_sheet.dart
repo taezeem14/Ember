@@ -236,9 +236,27 @@ class TrackOptionsSheet extends StatelessWidget {
             const SizedBox(height: 8),
 
             // Action Options
+            if (player.currentSong?.id == song.id)
+              _OptionTile(
+                icon: FontAwesomeIcons.stop,
+                iconColor: EmberColors.error,
+                title: 'Stop Playback / Cut Song',
+                subtitle: 'Immediately stop playing and dismiss active song',
+                onTap: () {
+                  Navigator.pop(context);
+                  player.stopPlayback();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      backgroundColor: EmberColors.surfaceContainerHigh,
+                      content: Text('Playback stopped', style: TextStyle(color: EmberColors.textPrimary)),
+                    ),
+                  );
+                },
+              ),
             _OptionTile(
               icon: FontAwesomeIcons.folderPlus,
               title: 'Add to Playlist',
+
               subtitle: 'Save track into custom playlist',
               onTap: () {
                 Navigator.pop(context);

@@ -297,4 +297,41 @@ class CatalogService {
     // 3. Ambient fallback: Return tracks from same mood or popular tracks
     return getAllTracks().where((s) => s.id != song.id).take(limit).toList();
   }
+
+  /// Resolves any song's stream URL into a directly playable media stream with multi-tier fallback
+  static Future<String?> resolvePlayableStream(Song song) async {
+    final s = song.streamUrl;
+    final isYt = s.contains('youtube.com') || s.contains('youtu.be') || song.id.startsWith('yt_');
+    if (!isYt) {
+      return s;
+    }
+
+    // 1. Try YouTube MP4 audio stream resolution
+    try {
+      final ytStream = await YouTubeImporterService.resolvePlayableUrl(song);
+      if (ytStream != null && ytStream.isNotEmpty) {
+        return ytStream;
+      }
+    } catch (e) {
+      debugPrint('Direct YouTube stream extraction failed: $e');
+    }
+
+    // 2. High-speed fallback: Query JioSaavn 320kbps CDN using title and artist
+    try {
+      final cleanTitle = song.title.replaceAll(RegExp(r'\(.*?\)|\[.*?\]|Official|Video|Audio', caseSensitive: false), '').trim();
+      final query = cleanTitle.isNotEmpty ? '$cleanTitle ${song.artist}' : song.title;
+      final results = await searchOnline(query, limit: 3);
+      for (final r in results) {
+        if (r.streamUrl.isNotEmpty && !r.streamUrl.contains('youtube.com')) {
+          debugPrint('Resolved YouTube track "${song.title}" via high-speed Saavn CDN stream');
+          return r.streamUrl;
+        }
+      }
+    } catch (e) {
+      debugPrint('Saavn fallback stream error: $e');
+    }
+
+    return null;
+  }
 }
+

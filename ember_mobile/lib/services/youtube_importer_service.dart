@@ -86,11 +86,34 @@ class YouTubeImporterService {
     }
     final yt = YoutubeExplode();
     try {
-      final manifest = await yt.videos.streamsClient.getManifest(cleanId);
-      final audioStream = manifest.audioOnly.withHighestBitrate();
-      final url = audioStream.url.toString();
-      _streamCache[cleanId] = url;
-      return url;
+      final manifest = await yt.videos.streamsClient.getManifest(cleanId).timeout(const Duration(seconds: 6));
+
+      // 1. Android hardware decoder preference: MP4 / AAC audio stream (compatible with all devices like Redmi Note 5 Pro)
+      final mp4Audio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
+      if (mp4Audio.isNotEmpty) {
+        final audioStream = mp4Audio.withHighestBitrate();
+        final url = audioStream.url.toString();
+        _streamCache[cleanId] = url;
+        return url;
+      }
+
+      // 2. Muxed MP4 (e.g. 360p video with AAC audio) fallback
+      final muxedMp4 = manifest.muxed.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
+      if (muxedMp4.isNotEmpty) {
+        final stream = muxedMp4.withHighestBitrate();
+        final url = stream.url.toString();
+        _streamCache[cleanId] = url;
+        return url;
+      }
+
+      // 3. Fallback to any audio stream (e.g. WebM/Opus)
+      if (manifest.audioOnly.isNotEmpty) {
+        final audioStream = manifest.audioOnly.withHighestBitrate();
+        final url = audioStream.url.toString();
+        _streamCache[cleanId] = url;
+        return url;
+      }
+      return null;
     } catch (e) {
       debugPrint('Error resolving YouTube audio stream: $e');
       return null;
@@ -100,17 +123,21 @@ class YouTubeImporterService {
   }
 
   /// Resolve any song's stream URL into a directly playable media stream
-  static Future<String> resolvePlayableUrl(Song song) async {
+  static Future<String?> resolvePlayableUrl(Song song) async {
     final s = song.streamUrl;
     if (s.contains('youtube.com/watch') || s.contains('youtu.be/') || song.id.startsWith('yt_')) {
-      final vid = extractVideoId(s) ?? song.id.replaceFirst('yt_', '');
-      final stream = await getAudioStreamUrl(vid);
-      if (stream != null && stream.isNotEmpty) {
-        return stream;
+      final vid = extractVideoId(s) ?? (song.id.startsWith('yt_') ? song.id.replaceFirst('yt_', '') : null);
+      if (vid != null && vid.isNotEmpty) {
+        final stream = await getAudioStreamUrl(vid);
+        if (stream != null && stream.isNotEmpty) {
+          return stream;
+        }
       }
+      return null; // Return null so audio player never tries to play an HTML webpage
     }
     return s;
   }
+
 
   /// NewPipe-style extraction for YouTube Mixes (list=RD..., list=RDMM, radio mixes)
   static Future<Playlist?> _importYouTubeMix(String? videoId, String playlistId) async {

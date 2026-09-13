@@ -8,9 +8,10 @@ import '../services/catalog_service.dart';
 import '../theme/ember_theme.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/spectrum_bars.dart';
-import 'sound_shaping_sheet.dart';
 import 'track_options_sheet.dart';
 import 'playlist_detail_sheet.dart';
+import 'settings_screen.dart';
+
 
 class QueueDiscoveryScreen extends StatefulWidget {
   const QueueDiscoveryScreen({super.key});
@@ -229,12 +230,13 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                     tooltip: 'Import from YouTube',
                     onPressed: () => _showYouTubeImportDialog(context, player),
                   ),
-                  // Sound Shaping / Working Equalizer Button
+                  // Settings & Creator Button (Replaced EQ on homescreen as requested)
                   IconButton(
-                    icon: const FaIcon(FontAwesomeIcons.sliders, color: EmberColors.textSecondary, size: 18),
-                    tooltip: 'Sound Shaping & EQ',
-                    onPressed: () => SoundShapingSheet.show(context),
+                    icon: const FaIcon(FontAwesomeIcons.gear, color: EmberColors.textSecondary, size: 18),
+                    tooltip: 'Settings & Creator',
+                    onPressed: () => SettingsScreen.show(context),
                   ),
+
                 ],
               ),
             ),
@@ -380,6 +382,12 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                     active: player.activeTab == 'history',
                     onTap: () => player.setTab('history'),
                   ),
+                  const SizedBox(width: 6),
+                  _TabPill(
+                    label: 'Settings',
+                    active: player.activeTab == 'settings',
+                    onTap: () => player.setTab('settings'),
+                  ),
                 ],
               ),
             ),
@@ -413,11 +421,14 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
         return _buildDownloadsTab(context, player);
       case 'history':
         return _buildSongList(context, player, player.history, emptyMsg: 'No playback history yet');
+      case 'settings':
+        return const SettingsContent();
       case 'queue':
       default:
         return _buildQueueTab(context, player);
     }
   }
+
 
   // Dedicated Music Discovery Tab (Trending Hits, Global Top 50, Pop & Dance, etc.)
   Widget _buildDiscoverTab(BuildContext context, PlayerProvider player) {
