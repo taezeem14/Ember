@@ -31,6 +31,7 @@ class PlayerProvider extends ChangeNotifier {
   List<Playlist> _playlists = [];
   List<Song> _downloads = [];
   List<Song> _recommendations = [];
+  List<Song> _categoryTracks = [];
   bool _isAutoplayEnabled = true;
 
   // Equalizer state
@@ -76,6 +77,7 @@ class PlayerProvider extends ChangeNotifier {
   List<Playlist> get playlists => _playlists;
   List<Song> get downloads => _downloads;
   List<Song> get recommendations => _recommendations;
+  List<Song> get categoryTracks => _categoryTracks;
   bool get isAutoplayEnabled => _isAutoplayEnabled;
   int get sleepSecondsRemaining => _sleepSecondsRemaining;
 
@@ -124,6 +126,14 @@ class PlayerProvider extends ChangeNotifier {
     _audioHandler.setEqualizerEnabled(_eqEnabled);
     _audioHandler.setBassBoost(_bassBoost);
     _audioHandler.applyEqualizerPreset(_eqPreset);
+
+    // Ensure all restored lists are completely free of legacy mock/placeholder tracks
+    _favorites = _favorites.where((s) => !Song.isPlaceholder(s)).toList();
+    _history = _history.where((s) => !Song.isPlaceholder(s)).toList();
+    _downloads = _downloads.where((s) => !Song.isPlaceholder(s)).toList();
+    _playlists = _playlists
+        .map((p) => p.copyWith(songs: p.songs.where((s) => !Song.isPlaceholder(s)).toList()))
+        .toList();
 
     // Restore previous queue from history or offline downloads, avoiding mock placeholder tracks
     if (_history.isNotEmpty) {
@@ -370,10 +380,12 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final trending = await CatalogService.fetchTrendingTracks();
-      if (trending.isNotEmpty) {
-        _searchResults = trending;
+      final nonPlaceholders = trending.where((s) => !Song.isPlaceholder(s)).toList();
+      if (nonPlaceholders.isNotEmpty) {
+        _categoryTracks = nonPlaceholders;
+        _searchResults = nonPlaceholders;
         if (_queue.isEmpty) {
-          _queue = List.from(trending);
+          _queue = List.from(nonPlaceholders);
         }
       }
     } catch (e) {
@@ -386,14 +398,17 @@ class PlayerProvider extends ChangeNotifier {
 
   Future<void> selectCategory(String categoryKey) async {
     _activeCategory = categoryKey;
+    _activeTab = 'discover';
     _isSearching = true;
     notifyListeners();
     try {
       final liveTracks = await CatalogService.fetchCategoryTracks(categoryKey);
-      if (liveTracks.isNotEmpty && _activeCategory == categoryKey) {
-        _searchResults = liveTracks;
+      final nonPlaceholders = liveTracks.where((s) => !Song.isPlaceholder(s)).toList();
+      if (nonPlaceholders.isNotEmpty && _activeCategory == categoryKey) {
+        _categoryTracks = nonPlaceholders;
+        _searchResults = nonPlaceholders;
         if (_queue.isEmpty) {
-          _queue = List.from(liveTracks);
+          _queue = List.from(nonPlaceholders);
         }
       }
     } catch (e) {
@@ -402,6 +417,22 @@ class PlayerProvider extends ChangeNotifier {
       _isSearching = false;
       notifyListeners();
     }
+  }
+
+  Future<void> playCategoryTracks(List<Song> tracks, {int startIndex = 0}) async {
+    final validTracks = tracks.where((s) => !Song.isPlaceholder(s)).toList();
+    if (validTracks.isEmpty) return;
+    _queue = List.from(validTracks);
+    _currentIndex = startIndex.clamp(0, _queue.length - 1);
+    notifyListeners();
+    await playSong(_queue[_currentIndex]);
+  }
+
+  void addTracksToQueue(List<Song> tracks) {
+    final validTracks = tracks.where((s) => !Song.isPlaceholder(s)).toList();
+    if (validTracks.isEmpty) return;
+    _queue.addAll(validTracks);
+    notifyListeners();
   }
 
   // Backward-compatible alias

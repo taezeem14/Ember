@@ -26,73 +26,123 @@ class StorageService {
   static Future<StorageService> init() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return StorageService(prefs);
+      final service = StorageService(prefs);
+      await service.purgeAllPlaceholders();
+      return service;
     } catch (e) {
       return StorageService(null);
     }
   }
 
+  /// Purges all legacy mock / placeholder songs from all storage keys permanently
+  Future<void> purgeAllPlaceholders() async {
+    final favs = loadFavorites();
+    await saveFavorites(favs);
+
+    final hist = loadHistory();
+    await saveHistory(hist);
+
+    final pl = loadPlaylists();
+    await savePlaylists(pl);
+
+    final dl = loadDownloads();
+    await saveDownloads(dl);
+  }
+
   List<Song> loadFavorites() {
-    if (_prefs == null) return List.unmodifiable(_memFavorites);
+    if (_prefs == null) {
+      return List.unmodifiable(_memFavorites.where((s) => !Song.isPlaceholder(s)));
+    }
     final raw = _prefs.getStringList(_favsKey) ?? [];
-    return raw
+    final cleaned = raw
         .map((s) {
           try {
-            return Song.fromMap(jsonDecode(s) as Map<String, dynamic>);
+            final song = Song.fromMap(jsonDecode(s) as Map<String, dynamic>);
+            return Song.isPlaceholder(song) ? null : song;
           } catch (_) {
             return null;
           }
         })
         .whereType<Song>()
         .toList();
+
+    _memFavorites.clear();
+    _memFavorites.addAll(cleaned);
+
+    if (raw.length != cleaned.length) {
+      final encoded = cleaned.map((s) => jsonEncode(s.toMap())).toList();
+      _prefs.setStringList(_favsKey, encoded);
+    }
+
+    return cleaned;
   }
 
   Future<void> saveFavorites(List<Song> songs) async {
+    final cleaned = songs.where((s) => !Song.isPlaceholder(s)).toList();
     _memFavorites.clear();
-    _memFavorites.addAll(songs);
+    _memFavorites.addAll(cleaned);
     if (_prefs != null) {
-      final encoded = songs.map((s) => jsonEncode(s.toMap())).toList();
+      final encoded = cleaned.map((s) => jsonEncode(s.toMap())).toList();
       await _prefs.setStringList(_favsKey, encoded);
     }
   }
 
   List<Song> loadHistory() {
-    if (_prefs == null) return List.unmodifiable(_memHistory);
+    if (_prefs == null) {
+      return List.unmodifiable(_memHistory.where((s) => !Song.isPlaceholder(s)));
+    }
     final raw = _prefs.getStringList(_histKey) ?? [];
-    return raw
+    final cleaned = raw
         .map((s) {
           try {
-            return Song.fromMap(jsonDecode(s) as Map<String, dynamic>);
+            final song = Song.fromMap(jsonDecode(s) as Map<String, dynamic>);
+            return Song.isPlaceholder(song) ? null : song;
           } catch (_) {
             return null;
           }
         })
         .whereType<Song>()
         .toList();
+
+    _memHistory.clear();
+    _memHistory.addAll(cleaned);
+
+    if (raw.length != cleaned.length) {
+      final encoded = cleaned.map((s) => jsonEncode(s.toMap())).toList();
+      _prefs.setStringList(_histKey, encoded);
+    }
+
+    return cleaned;
   }
 
   Future<void> saveHistory(List<Song> songs) async {
+    final cleaned = songs.where((s) => !Song.isPlaceholder(s)).take(50).toList();
     _memHistory.clear();
-    _memHistory.addAll(songs.take(50));
+    _memHistory.addAll(cleaned);
     if (_prefs != null) {
-      final encoded = songs.take(50).map((s) => jsonEncode(s.toMap())).toList();
+      final encoded = cleaned.map((s) => jsonEncode(s.toMap())).toList();
       await _prefs.setStringList(_histKey, encoded);
     }
   }
 
   List<Playlist> loadPlaylists() {
-    if (_prefs == null) return List.unmodifiable(_memPlaylists);
+    if (_prefs == null) {
+      return List.unmodifiable(_memPlaylists);
+    }
     final raw = _prefs.getStringList(_playlistsKey) ?? [];
-    return raw
-        .map((s) {
-          try {
-            return Playlist.fromMap(jsonDecode(s) as Map<String, dynamic>);
-          } catch (_) {
-            return null;
-          }
-        })
-        .whereType<Playlist>()
-        .toList();
+    final list = <Playlist>[];
+    for (final s in raw) {
+      try {
+        final pl = Playlist.fromMap(jsonDecode(s) as Map<String, dynamic>);
+        final sanitizedSongs = pl.songs.where((song) => !Song.isPlaceholder(song)).toList();
+        list.add(pl.copyWith(songs: sanitizedSongs));
+      } catch (_) {}
+    }
+
+    _memPlaylists.clear();
+    _memPlaylists.addAll(list);
+
+    return list;
   }
 
   Future<void> savePlaylists(List<Playlist> playlists) async {
@@ -105,56 +155,69 @@ class StorageService {
   }
 
   Future<void> savePlaylist(Playlist playlist) async {
-    final idx = _memPlaylists.indexWhere((p) => p.id == playlist.id);
+    final list = List<Playlist>.from(loadPlaylists());
+    final idx = list.indexWhere((p) => p.id == playlist.id);
     if (idx != -1) {
-      _memPlaylists[idx] = playlist;
+      list[idx] = playlist;
     } else {
-      _memPlaylists.insert(0, playlist);
+      list.insert(0, playlist);
     }
-    await savePlaylists(_memPlaylists);
+    await savePlaylists(list);
   }
 
   Future<void> deletePlaylist(String playlistId) async {
-    _memPlaylists.removeWhere((p) => p.id == playlistId);
-    await savePlaylists(_memPlaylists);
+    final list = List<Playlist>.from(loadPlaylists());
+    list.removeWhere((p) => p.id == playlistId);
+    await savePlaylists(list);
   }
 
   Future<void> addSongToPlaylist(String playlistId, Song song) async {
-    final idx = _memPlaylists.indexWhere((p) => p.id == playlistId);
+    if (Song.isPlaceholder(song)) return;
+    final list = List<Playlist>.from(loadPlaylists());
+    final idx = list.indexWhere((p) => p.id == playlistId);
     if (idx != -1) {
-      final existing = _memPlaylists[idx];
+      final existing = list[idx];
       if (!existing.songs.any((s) => s.id == song.id)) {
         final updatedSongs = List<Song>.from(existing.songs)..add(song);
         final updated = existing.copyWith(
           songs: updatedSongs,
-          coverUrl: existing.coverUrl ?? song.artworkUrl,
+          coverUrl: existing.coverUrl ?? (song.artworkUrl.isNotEmpty ? song.artworkUrl : null),
         );
-        _memPlaylists[idx] = updated;
-        await savePlaylists(_memPlaylists);
+        list[idx] = updated;
+        await savePlaylists(list);
       }
     }
   }
 
   List<Song> loadDownloads() {
-    if (_prefs == null) return List.unmodifiable(_memDownloads);
+    if (_prefs == null) {
+      return List.unmodifiable(_memDownloads.where((s) => !Song.isPlaceholder(s)));
+    }
     final raw = _prefs.getStringList(_downloadsKey) ?? [];
-    return raw
+    final cleaned = raw
         .map((s) {
           try {
-            return Song.fromMap(jsonDecode(s) as Map<String, dynamic>);
+            final song = Song.fromMap(jsonDecode(s) as Map<String, dynamic>);
+            return Song.isPlaceholder(song) ? null : song;
           } catch (_) {
             return null;
           }
         })
         .whereType<Song>()
         .toList();
+
+    _memDownloads.clear();
+    _memDownloads.addAll(cleaned);
+
+    return cleaned;
   }
 
   Future<void> saveDownloads(List<Song> songs) async {
+    final cleaned = songs.where((s) => !Song.isPlaceholder(s)).toList();
     _memDownloads.clear();
-    _memDownloads.addAll(songs);
+    _memDownloads.addAll(cleaned);
     if (_prefs != null) {
-      final encoded = songs.map((s) => jsonEncode(s.toMap())).toList();
+      final encoded = cleaned.map((s) => jsonEncode(s.toMap())).toList();
       await _prefs.setStringList(_downloadsKey, encoded);
     }
   }

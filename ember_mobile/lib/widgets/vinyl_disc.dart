@@ -94,7 +94,7 @@ class _VinylPainter extends CustomPainter {
 
     // Grooves
     final groovePaint = Paint()
-      ..color = Colors.white.withOpacity(0.04)
+      ..color = Colors.white.withValues(alpha: 0.04)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.8;
 

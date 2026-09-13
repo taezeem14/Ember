@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
+import 'youtube_importer_service.dart';
 
 Future<AudioHandler> initAudioHandler() async {
   try {
@@ -121,17 +122,27 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     );
 
     try {
-      if (song.streamUrl.startsWith('/') || song.streamUrl.startsWith('file://')) {
+      String streamUrl = song.streamUrl;
+      if (streamUrl.contains('youtube.com') ||
+          streamUrl.contains('youtu.be') ||
+          song.id.startsWith('yt_')) {
+        final resolved = await YouTubeImporterService.resolvePlayableUrl(song);
+        if (resolved.isNotEmpty) {
+          streamUrl = resolved;
+        }
+      }
+
+      if (streamUrl.startsWith('/') || streamUrl.startsWith('file://')) {
         // Local offline file
-        final localPath = song.streamUrl.replaceFirst('file://', '');
+        final localPath = streamUrl.replaceFirst('file://', '');
         final file = File(localPath);
         if (await file.exists()) {
           await _player.setFilePath(localPath);
         } else {
-          await _player.setUrl(song.streamUrl);
+          await _player.setUrl(streamUrl);
         }
       } else {
-        await _player.setUrl(song.streamUrl);
+        await _player.setUrl(streamUrl);
       }
       await _player.play();
     } catch (e) {

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:dart_des/dart_des.dart';
 import '../models/song.dart';
+import 'youtube_importer_service.dart';
 
 class MusicCategory {
   final String key;
@@ -189,48 +190,14 @@ class CatalogService {
       debugPrint('Primary full song search error: $e');
     }
 
-    // 2. Secondary Fallback: Global iTunes catalogue
+    // 2. Secondary Fallback: Full YouTube music search via InnerTube (NewPipe style)
     try {
-      final itunesUrl = Uri.parse(
-        'https://itunes.apple.com/search?term=${Uri.encodeComponent(q)}&entity=song&limit=$limit',
-      );
-      final resp = await http.get(itunesUrl).timeout(const Duration(seconds: 5));
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final rawResults = data['results'] as List? ?? [];
-        final parsed = <Song>[];
-
-        for (final item in rawResults) {
-          if (item is Map<String, dynamic>) {
-            final trackName = item['trackName'] as String?;
-            final artistName = item['artistName'] as String?;
-            final previewUrl = item['previewUrl'] as String?;
-            if (trackName == null || previewUrl == null || previewUrl.isEmpty) continue;
-
-            final trackId = item['trackId']?.toString() ?? UniqueKey().toString();
-            final durationMs = (item['trackTimeMillis'] as num?)?.toInt() ?? 180000;
-            final rawArt = item['artworkUrl100'] as String? ?? '';
-            final artworkUrl = rawArt.replaceAll('100x100bb', '600x600bb');
-
-            parsed.add(
-              Song(
-                id: trackId,
-                title: trackName,
-                artist: artistName ?? 'Unknown Artist',
-                duration: Duration(milliseconds: durationMs),
-                artworkUrl: artworkUrl,
-                streamUrl: previewUrl,
-              ),
-            );
-          }
-        }
-
-        if (parsed.isNotEmpty) {
-          return parsed;
-        }
+      final ytSongs = await YouTubeImporterService.searchYouTube(q, limit: limit);
+      if (ytSongs.isNotEmpty) {
+        return ytSongs;
       }
     } catch (e) {
-      debugPrint('iTunes search fallback error: $e');
+      debugPrint('YouTube InnerTube search fallback error: $e');
     }
 
     // 3. Offline fallback

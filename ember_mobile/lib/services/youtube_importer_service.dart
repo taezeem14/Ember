@@ -75,19 +75,41 @@ class YouTubeImporterService {
     return const Duration(minutes: 3, seconds: 30);
   }
 
+  static final Map<String, String> _streamCache = {};
+
   /// Resolve direct playable audio stream URL from a YouTube video ID
   static Future<String?> getAudioStreamUrl(String videoId) async {
+    final cleanId = videoId.replaceFirst('yt_', '').trim();
+    if (cleanId.isEmpty) return null;
+    if (_streamCache.containsKey(cleanId)) {
+      return _streamCache[cleanId];
+    }
     final yt = YoutubeExplode();
     try {
-      final manifest = await yt.videos.streamsClient.getManifest(videoId);
+      final manifest = await yt.videos.streamsClient.getManifest(cleanId);
       final audioStream = manifest.audioOnly.withHighestBitrate();
-      return audioStream.url.toString();
+      final url = audioStream.url.toString();
+      _streamCache[cleanId] = url;
+      return url;
     } catch (e) {
       debugPrint('Error resolving YouTube audio stream: $e');
       return null;
     } finally {
       yt.close();
     }
+  }
+
+  /// Resolve any song's stream URL into a directly playable media stream
+  static Future<String> resolvePlayableUrl(Song song) async {
+    final s = song.streamUrl;
+    if (s.contains('youtube.com/watch') || s.contains('youtu.be/') || song.id.startsWith('yt_')) {
+      final vid = extractVideoId(s) ?? song.id.replaceFirst('yt_', '');
+      final stream = await getAudioStreamUrl(vid);
+      if (stream != null && stream.isNotEmpty) {
+        return stream;
+      }
+    }
+    return s;
   }
 
   /// NewPipe-style extraction for YouTube Mixes (list=RD..., list=RDMM, radio mixes)
@@ -285,5 +307,75 @@ class YouTubeImporterService {
     }
 
     return const YouTubeImportResult(type: YouTubeImportType.unknown, error: 'Unrecognized YouTube URL');
+  }
+
+  /// NewPipe-style InnerTube music search returning full-length tracks with high-resolution thumbnails
+  static Future<List<Song>> searchYouTube(String query, {int limit = 25}) async {
+    try {
+      final body = jsonEncode({
+        "context": {
+          "client": {
+            "clientName": "WEB",
+            "clientVersion": "2.20240101.00.00",
+            "hl": "en",
+            "gl": "US",
+          }
+        },
+        "query": query,
+      });
+
+      final resp = await http.post(
+        Uri.parse('https://www.youtube.com/youtubei/v1/search?prettyPrint=false'),
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        body: body,
+      ).timeout(const Duration(seconds: 7));
+
+      if (resp.statusCode == 200) {
+        final json = jsonDecode(resp.body) as Map<String, dynamic>;
+        final sections = json['contents']?['twoColumnSearchResultsRenderer']?['primaryContents']?['sectionListRenderer']?['contents'] as List? ?? [];
+        final songs = <Song>[];
+
+        for (final sec in sections) {
+          final items = sec['itemSectionRenderer']?['contents'] as List? ?? [];
+          for (final item in items) {
+            final v = item['videoRenderer'];
+            if (v != null) {
+              final vId = v['videoId'] as String?;
+              if (vId == null || vId.isEmpty) continue;
+
+              final title = v['title']?['runs']?[0]?['text'] as String? ??
+                  v['title']?['simpleText'] as String? ??
+                  'YouTube Song';
+              final author = v['ownerText']?['runs']?[0]?['text'] as String? ??
+                  v['shortBylineText']?['runs']?[0]?['text'] as String? ??
+                  'YouTube';
+              final durText = v['lengthText']?['simpleText'] as String?;
+
+              songs.add(
+                Song(
+                  id: 'yt_$vId',
+                  title: title,
+                  artist: author,
+                  duration: parseDurationText(durText),
+                  artworkUrl: 'https://i.ytimg.com/vi/$vId/hqdefault.jpg',
+                  streamUrl: 'https://www.youtube.com/watch?v=$vId',
+                ),
+              );
+
+              if (songs.length >= limit) break;
+            }
+          }
+          if (songs.length >= limit) break;
+        }
+
+        return songs;
+      }
+    } catch (e) {
+      debugPrint('InnerTube search error: $e');
+    }
+    return [];
   }
 }

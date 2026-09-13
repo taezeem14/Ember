@@ -41,12 +41,12 @@ class MiniPlayer extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: EmberColors.surfaceContainerLow.withOpacity(0.95),
+          color: EmberColors.surfaceContainerLow.withValues(alpha: 0.95),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: EmberColors.outlineVariant.withOpacity(0.6)),
+          border: Border.all(color: EmberColors.outlineVariant.withValues(alpha: 0.6)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.4),
+              color: Colors.black.withValues(alpha: 0.4),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),
@@ -60,7 +60,7 @@ class MiniPlayer extends StatelessWidget {
             LinearProgressIndicator(
               value: progress,
               minHeight: 2,
-              backgroundColor: Colors.white.withOpacity(0.05),
+              backgroundColor: Colors.white.withValues(alpha: 0.05),
               valueColor: const AlwaysStoppedAnimation<Color>(EmberColors.primaryAmber),
             ),
             Padding(

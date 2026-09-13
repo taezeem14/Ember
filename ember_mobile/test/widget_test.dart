@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:ember_mobile/models/song.dart';
+import 'package:ember_mobile/models/playlist.dart';
+import 'package:ember_mobile/services/storage_service.dart';
 import 'package:ember_mobile/services/catalog_service.dart';
 import 'package:ember_mobile/services/lyrics_service.dart';
 import 'package:ember_mobile/theme/ember_theme.dart';
@@ -67,6 +69,96 @@ void main() {
       expect(updated.isFavorite, true);
       expect(updated.id, original.id);
       expect(updated.artist, original.artist);
+    });
+
+    test('Song.isPlaceholder identifies mock songs and allows real songs', () {
+      const coffee = Song(
+        id: 'lofi_01',
+        title: 'Midnight Coffee Steam',
+        artist: 'Lofi Coffee Sessions',
+        duration: Duration(minutes: 2, seconds: 45),
+        artworkUrl: '',
+        streamUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+      );
+      expect(Song.isPlaceholder(coffee), isTrue);
+
+      const paperTape = Song(
+        id: 'mock_02',
+        title: 'Midnight Paper Tape',
+        artist: 'Ember Collective',
+        duration: Duration(minutes: 3, seconds: 12),
+        artworkUrl: '',
+        streamUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+      );
+      expect(Song.isPlaceholder(paperTape), isTrue);
+
+      const realSong = Song(
+        id: 'yt_abc123',
+        title: 'Believer',
+        artist: 'Imagine Dragons',
+        duration: Duration(minutes: 3, seconds: 24),
+        artworkUrl: 'https://i.ytimg.com/vi/abc123/hqdefault.jpg',
+        streamUrl: 'https://www.youtube.com/watch?v=abc123',
+      );
+      expect(Song.isPlaceholder(realSong), isFalse);
+    });
+  });
+
+  group('Storage Service Tests', () {
+    test('StorageService in-memory CRUD maintains playlists without data loss', () async {
+      final storage = StorageService(null);
+      expect(storage.loadPlaylists(), isEmpty);
+
+      final pl1 = Playlist(
+        id: 'pl_1',
+        title: 'Rock Favorites',
+        songs: const [
+          Song(
+            id: 's_1',
+            title: 'Song One',
+            artist: 'Band A',
+            duration: Duration(minutes: 3),
+            artworkUrl: '',
+            streamUrl: 'https://example.com/1.mp3',
+          ),
+        ],
+        createdAt: DateTime.now(),
+      );
+
+      await storage.savePlaylist(pl1);
+      expect(storage.loadPlaylists().length, 1);
+      expect(storage.loadPlaylists().first.title, 'Rock Favorites');
+
+      final pl2 = Playlist(
+        id: 'pl_2',
+        title: 'Chill Vibes',
+        songs: const [],
+        createdAt: DateTime.now(),
+      );
+
+      await storage.savePlaylist(pl2);
+      expect(storage.loadPlaylists().length, 2);
+
+      await storage.addSongToPlaylist(
+        'pl_2',
+        const Song(
+          id: 's_2',
+          title: 'Song Two',
+          artist: 'Band B',
+          duration: Duration(minutes: 4),
+          artworkUrl: '',
+          streamUrl: 'https://example.com/2.mp3',
+        ),
+      );
+
+      final reloaded = storage.loadPlaylists();
+      final chill = reloaded.firstWhere((p) => p.id == 'pl_2');
+      expect(chill.songs.length, 1);
+      expect(chill.songs.first.id, 's_2');
+
+      await storage.deletePlaylist('pl_1');
+      expect(storage.loadPlaylists().length, 1);
+      expect(storage.loadPlaylists().first.id, 'pl_2');
     });
   });
 

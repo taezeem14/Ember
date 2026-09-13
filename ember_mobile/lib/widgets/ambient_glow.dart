@@ -64,12 +64,12 @@ class _AmbientGlowState extends State<AmbientGlow>
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: widget.glowColor.withOpacity(widget.isPlaying ? 0.35 : 0.15),
+                color: widget.glowColor.withValues(alpha: widget.isPlaying ? 0.35 : 0.15),
                 blurRadius: blurRadius,
                 spreadRadius: spreadRadius,
               ),
               BoxShadow(
-                color: EmberColors.secondaryHoney.withOpacity(widget.isPlaying ? 0.20 : 0.08),
+                color: EmberColors.secondaryHoney.withValues(alpha: widget.isPlaying ? 0.20 : 0.08),
                 blurRadius: blurRadius * 1.5,
                 spreadRadius: spreadRadius * 0.8,
               ),

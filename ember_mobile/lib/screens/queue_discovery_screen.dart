@@ -10,6 +10,7 @@ import '../widgets/mini_player.dart';
 import '../widgets/spectrum_bars.dart';
 import 'sound_shaping_sheet.dart';
 import 'track_options_sheet.dart';
+import 'playlist_detail_sheet.dart';
 
 class QueueDiscoveryScreen extends StatefulWidget {
   const QueueDiscoveryScreen({super.key});
@@ -338,11 +339,18 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
               ),
             ),
 
-            // Category Filter Tabs (Queue, Playlists, Favorites, Downloads, History)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+            // Sub-tabs (Discover, Queue, Playlists, Favorites, Downloads, History)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               child: Row(
                 children: [
+                  _TabPill(
+                    label: 'Discover',
+                    active: player.activeTab == 'discover',
+                    onTap: () => player.setTab('discover'),
+                  ),
+                  const SizedBox(width: 6),
                   _TabPill(
                     label: 'Queue',
                     active: player.activeTab == 'queue',
@@ -372,15 +380,6 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                     active: player.activeTab == 'history',
                     onTap: () => player.setTab('history'),
                   ),
-                  const Spacer(),
-                  if (player.activeTab == 'queue' && player.queue.length > 1)
-                    InkWell(
-                      onTap: () => player.clearQueue(),
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: FaIcon(FontAwesomeIcons.trashCan, size: 15, color: EmberColors.textMuted),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -404,6 +403,8 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
     }
 
     switch (player.activeTab) {
+      case 'discover':
+        return _buildDiscoverTab(context, player);
       case 'playlists':
         return _buildPlaylistsTab(context, player);
       case 'favorites':
@@ -416,6 +417,139 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
       default:
         return _buildQueueTab(context, player);
     }
+  }
+
+  // Dedicated Music Discovery Tab (Trending Hits, Global Top 50, Pop & Dance, etc.)
+  Widget _buildDiscoverTab(BuildContext context, PlayerProvider player) {
+    final cat = CatalogService.categories.firstWhere(
+      (c) => c.key == player.activeCategory,
+      orElse: () => CatalogService.categories.first,
+    );
+    final tracks = player.categoryTracks;
+
+    if (player.isSearching && tracks.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(strokeWidth: 2.5, color: EmberColors.primaryAmber),
+            const SizedBox(height: 14),
+            Text('Loading ${cat.title}...', style: const TextStyle(color: EmberColors.textSecondary, fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    if (tracks.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(cat.emoji, style: const TextStyle(fontSize: 36)),
+            const SizedBox(height: 12),
+            Text('No tracks loaded for ${cat.title}', style: const TextStyle(color: EmberColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: EmberColors.primaryAmber),
+              onPressed: () => player.selectCategory(cat.key),
+              child: const Text('Refresh', style: TextStyle(color: EmberColors.obsidianBase, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // Category Header with Play All & Add to Queue
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(cat.emoji, style: const TextStyle(fontSize: 15)),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            cat.title.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: EmberColors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.1,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${tracks.length} tracks • ${cat.subtitle}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: EmberColors.textMuted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: EmberColors.primaryAmber,
+                      foregroundColor: EmberColors.obsidianBase,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+                    ),
+                    onPressed: () => player.playCategoryTracks(tracks),
+                    icon: const FaIcon(FontAwesomeIcons.play, size: 11),
+                    label: const Text('Play All', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton(
+                    tooltip: 'Add All to Queue',
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    padding: const EdgeInsets.all(6),
+                    icon: const FaIcon(FontAwesomeIcons.listCheck, size: 14, color: EmberColors.primaryAmber),
+                    onPressed: () {
+                      player.addTracksToQueue(tracks);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          backgroundColor: EmberColors.surfaceContainerHigh,
+                          content: Text('Added ${tracks.length} tracks to queue', style: const TextStyle(color: EmberColors.primaryAmberHi)),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+            itemCount: tracks.length,
+            itemBuilder: (context, index) {
+              final song = tracks[index];
+              final isCurrent = player.currentSong?.id == song.id;
+              return _buildTrackRow(context, player, song, isCurrent, contextQueue: tracks);
+            },
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildSearchList(BuildContext context, PlayerProvider player) {
@@ -454,6 +588,42 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
 
     return CustomScrollView(
       slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'NOW PLAYING & QUEUE (${queue.length})',
+                  style: const TextStyle(
+                    color: EmberColors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                if (queue.length > 1)
+                  InkWell(
+                    onTap: () => player.clearQueue(),
+                    borderRadius: BorderRadius.circular(6),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          FaIcon(FontAwesomeIcons.trashCan, size: 12, color: EmberColors.textMuted),
+                          SizedBox(width: 4),
+                          Text('Clear', style: TextStyle(color: EmberColors.textMuted, fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+
         // Reorderable Active Queue
         SliverReorderableList(
           itemCount: queue.length,
@@ -746,7 +916,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                             ),
                           ],
                         ),
-                        onTap: () => player.playPlaylist(pl),
+                        onTap: () => PlaylistDetailSheet.show(context, pl),
                       ),
                     );
                   },
@@ -925,22 +1095,21 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
+              constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+              padding: const EdgeInsets.all(4),
               icon: FaIcon(
                 player.isFavorite(song.id) ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
-                size: 16,
+                size: 15,
                 color: player.isFavorite(song.id) ? EmberColors.primaryAmber : EmberColors.textMuted,
               ),
               onPressed: () => player.toggleFavorite(song),
             ),
             IconButton(
-              icon: const FaIcon(FontAwesomeIcons.ellipsis, size: 16, color: EmberColors.textMuted),
+              constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+              padding: const EdgeInsets.all(4),
+              icon: const FaIcon(FontAwesomeIcons.ellipsis, size: 15, color: EmberColors.textMuted),
               onPressed: () => TrackOptionsSheet.show(context, song),
             ),
-            if (isQueue)
-              const Padding(
-                padding: EdgeInsets.only(left: 4),
-                child: FaIcon(FontAwesomeIcons.gripVertical, size: 14, color: EmberColors.textMuted),
-              ),
           ],
         ),
         onTap: () {

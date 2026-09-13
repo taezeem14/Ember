@@ -130,11 +130,11 @@ class _SynchronizedLyricsViewState extends State<SynchronizedLyricsView> {
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
                   color: isActive
-                      ? EmberColors.primaryAmber.withOpacity(0.14)
+                      ? EmberColors.primaryAmber.withValues(alpha: 0.14)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
                   border: isActive
-                      ? Border.all(color: EmberColors.primaryAmber.withOpacity(0.3), width: 1)
+                      ? Border.all(color: EmberColors.primaryAmber.withValues(alpha: 0.3), width: 1)
                       : null,
                 ),
                 child: Text(
@@ -143,7 +143,7 @@ class _SynchronizedLyricsViewState extends State<SynchronizedLyricsView> {
                   style: TextStyle(
                     color: isActive
                         ? EmberColors.primaryAmberHi
-                        : EmberColors.textPrimary.withOpacity(0.4),
+                        : EmberColors.textPrimary.withValues(alpha: 0.4),
                     fontSize: isActive ? 18 : 15,
                     fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
                     height: 1.5,

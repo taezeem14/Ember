@@ -80,4 +80,54 @@ class Song {
 
   @override
   String toString() => 'Song(id: $id, title: $title, artist: $artist)';
+
+  /// Identifies legacy mock/placeholder tracks (e.g. Coffee Steam, SoundHelix previews)
+  static bool isPlaceholder(Song song) {
+    final t = song.title.toLowerCase();
+    final a = song.artist.toLowerCase();
+    final s = song.streamUrl.toLowerCase();
+    final i = song.id.toLowerCase();
+
+    if (i.startsWith('lofi_') ||
+        i.startsWith('rain_') ||
+        i.startsWith('jazz_') ||
+        i.startsWith('fire_') ||
+        i.startsWith('amb_') ||
+        i.startsWith('aut_') ||
+        i.startsWith('mock_')) {
+      return true;
+    }
+
+    if (s.contains('soundhelix.com') ||
+        s.contains('audio-ssl.itunes.apple.com') ||
+        s.contains('itunes.apple.com')) {
+      return true;
+    }
+
+    if (t.contains('coffee steam') ||
+        t.contains('paper notebook') ||
+        t.contains('paper tape') ||
+        t.contains('waterdrops on glass') ||
+        t.contains('autumn rain in kyoto') ||
+        t.contains('smoke & bourbon') ||
+        t.contains('embers glowing soft') ||
+        t.contains('constellations above') ||
+        t.contains('golden leaves falling')) {
+      return true;
+    }
+
+    if (a.contains('lofi coffee') ||
+        a.contains('komorebi') ||
+        a.contains('ember collective') ||
+        a.contains('petrichor') ||
+        a.contains('sora trio') ||
+        a.contains('amber quartet') ||
+        a.contains('cedar & pine') ||
+        a.contains('solaris drift') ||
+        a.contains('harvest moon')) {
+      return true;
+    }
+
+    return false;
+  }
 }
