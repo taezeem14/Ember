@@ -190,18 +190,63 @@ class CatalogService {
       debugPrint('Primary full song search error: $e');
     }
 
-    // 2. Secondary Fallback: Full YouTube music search via InnerTube (NewPipe style)
+    // 2. Secondary Fallback: Global iTunes catalogue (proven reliable audio streaming)
+    try {
+      final itunesUrl = Uri.parse(
+        'https://itunes.apple.com/search?term=${Uri.encodeComponent(q)}&entity=song&limit=$limit',
+      );
+      final resp = await http.get(itunesUrl).timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final rawResults = data['results'] as List? ?? [];
+        final parsed = <Song>[];
+
+        for (final item in rawResults) {
+          if (item is Map<String, dynamic>) {
+            final trackName = item['trackName'] as String?;
+            final artistName = item['artistName'] as String?;
+            final previewUrl = item['previewUrl'] as String?;
+            if (trackName == null || previewUrl == null || previewUrl.isEmpty) continue;
+
+            final trackId = item['trackId']?.toString() ?? UniqueKey().toString();
+            final durationMs = (item['trackTimeMillis'] as num?)?.toInt() ?? 180000;
+            final rawArt = item['artworkUrl100'] as String? ?? '';
+            final artworkUrl = rawArt.replaceAll('100x100bb', '600x600bb');
+
+            parsed.add(
+              Song(
+                id: trackId,
+                title: trackName,
+                artist: artistName ?? 'Unknown Artist',
+                duration: Duration(milliseconds: durationMs),
+                artworkUrl: artworkUrl,
+                streamUrl: previewUrl,
+              ),
+            );
+          }
+        }
+
+        if (parsed.isNotEmpty) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      debugPrint('iTunes search fallback error: $e');
+    }
+
+    // 3. Tertiary: YouTube music search via InnerTube
     try {
       final ytSongs = await YouTubeImporterService.searchYouTube(q, limit: limit);
       if (ytSongs.isNotEmpty) {
         return ytSongs;
       }
     } catch (e) {
-      debugPrint('YouTube InnerTube search fallback error: $e');
+      debugPrint('YouTube search fallback error: $e');
     }
 
-    // 3. Offline fallback
+    // 4. Offline fallback
     return search(query);
+
   }
 
   /// Fetch today's real trending full-length songs (320kbps)
@@ -302,36 +347,101 @@ class CatalogService {
   static Future<String?> resolvePlayableStream(Song song) async {
     final s = song.streamUrl;
     final isYt = s.contains('youtube.com') || s.contains('youtu.be') || song.id.startsWith('yt_');
-    if (!isYt) {
+    if (!isYt && s.isNotEmpty) {
       return s;
     }
 
-    // 1. Try YouTube MP4 audio stream resolution
+    final cleanTitle = song.title
+        .replaceAll(RegExp(r'\(.*?\)|\[.*?\]|Official|Music|Video|Audio|HD|4K|Lyrics|Visualizer', caseSensitive: false), '')
+        .trim();
+    final cleanArtist = (song.artist == 'Unknown Artist' ||
+            song.artist.toLowerCase().contains('topic') ||
+            song.artist.toLowerCase().contains('vevo'))
+        ? ''
+        : song.artist.trim();
+    final query = cleanArtist.isNotEmpty ? '$cleanTitle $cleanArtist' : cleanTitle;
+
+    // 1. High-speed primary: Query JioSaavn full-length 320kbps catalogue
+    try {
+      final saavnUrl = Uri.parse(
+        'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&includeMetaTags=1&p=1&n=3&q=${Uri.encodeComponent(query)}',
+      );
+      final resp = await http.get(saavnUrl, headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(seconds: 4));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final list = data['results'] as List? ?? [];
+        for (final item in list) {
+          final enc = item['encrypted_media_url'] as String?;
+          if (enc != null && enc.isNotEmpty) {
+            final stream = decryptMediaUrl(enc);
+            if (stream != null && stream.isNotEmpty) {
+              debugPrint('Resolved YouTube track "${song.title}" via Saavn 320kbps CDN');
+              return stream;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Saavn resolve error: $e');
+    }
+
+    // 1b. If artist was present, try title only on Saavn
+    if (cleanArtist.isNotEmpty) {
+      try {
+        final saavnUrl2 = Uri.parse(
+          'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&includeMetaTags=1&p=1&n=3&q=${Uri.encodeComponent(cleanTitle)}',
+        );
+        final resp2 = await http.get(saavnUrl2, headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(seconds: 3));
+        if (resp2.statusCode == 200) {
+          final data2 = jsonDecode(resp2.body) as Map<String, dynamic>;
+          final list2 = data2['results'] as List? ?? [];
+          for (final item in list2) {
+            final enc = item['encrypted_media_url'] as String?;
+            if (enc != null && enc.isNotEmpty) {
+              final stream = decryptMediaUrl(enc);
+              if (stream != null && stream.isNotEmpty) {
+                debugPrint('Resolved YouTube track "${song.title}" via Saavn title-only CDN');
+                return stream;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Secondary fallback: Global iTunes catalogue (proven reliable audio streaming)
+    try {
+      final itunesUrl = Uri.parse(
+        'https://itunes.apple.com/search?term=${Uri.encodeComponent(cleanTitle.isNotEmpty ? cleanTitle : song.title)}&entity=song&limit=3',
+      );
+      final resp = await http.get(itunesUrl).timeout(const Duration(seconds: 4));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final list = data['results'] as List? ?? [];
+        for (final item in list) {
+          final prev = item['previewUrl'] as String?;
+          if (prev != null && prev.isNotEmpty) {
+            debugPrint('Resolved track "${song.title}" via iTunes fallback');
+            return prev;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('iTunes resolve error: $e');
+    }
+
+    // 3. Tertiary fallback: YouTube MP4 stream extraction
     try {
       final ytStream = await YouTubeImporterService.resolvePlayableUrl(song);
       if (ytStream != null && ytStream.isNotEmpty) {
         return ytStream;
       }
     } catch (e) {
-      debugPrint('Direct YouTube stream extraction failed: $e');
-    }
-
-    // 2. High-speed fallback: Query JioSaavn 320kbps CDN using title and artist
-    try {
-      final cleanTitle = song.title.replaceAll(RegExp(r'\(.*?\)|\[.*?\]|Official|Video|Audio', caseSensitive: false), '').trim();
-      final query = cleanTitle.isNotEmpty ? '$cleanTitle ${song.artist}' : song.title;
-      final results = await searchOnline(query, limit: 3);
-      for (final r in results) {
-        if (r.streamUrl.isNotEmpty && !r.streamUrl.contains('youtube.com')) {
-          debugPrint('Resolved YouTube track "${song.title}" via high-speed Saavn CDN stream');
-          return r.streamUrl;
-        }
-      }
-    } catch (e) {
-      debugPrint('Saavn fallback stream error: $e');
+      debugPrint('YouTube stream extraction error: $e');
     }
 
     return null;
   }
+
 }
 

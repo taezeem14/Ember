@@ -9,7 +9,7 @@ import 'package:ember_mobile/services/lyrics_service.dart';
 import 'package:ember_mobile/theme/ember_theme.dart';
 import 'package:ember_mobile/widgets/ambient_glow.dart';
 import 'package:ember_mobile/widgets/vinyl_disc.dart';
-import 'package:ember_mobile/screens/settings_screen.dart';
+
 
 
 void main() {

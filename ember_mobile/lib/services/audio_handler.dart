@@ -148,16 +148,10 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
           await _player.setUrl(streamUrl);
         }
       } else {
-        await _player.setUrl(
-          streamUrl,
-          headers: const {
-            'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': 'https://www.youtube.com/',
-          },
-        );
+        await _player.setUrl(streamUrl);
       }
       await _player.play();
+
     } catch (e) {
       debugPrint('Playback error: $e');
     }
