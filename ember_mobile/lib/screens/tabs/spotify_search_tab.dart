@@ -359,59 +359,72 @@ class _SpotifySearchTabState extends State<SpotifySearchTab> {
                   ),
                 )
               else ...[
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  sliver: SliverToBoxAdapter(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Top Results',
-                          style: TextStyle(
-                            color: EmberColors.textPrimary,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                Builder(
+                  builder: (context) {
+                    final searchResultsSnapshot = List<Song>.from(player.searchResults);
+                    return SliverMainAxisGroup(
+                      slivers: [
+                        SliverPadding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          sliver: SliverToBoxAdapter(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Top Results',
+                                  style: TextStyle(
+                                    color: EmberColors.textPrimary,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  '${searchResultsSnapshot.length} tracks',
+                                  style: const TextStyle(
+                                    color: EmberColors.textMuted,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        Text(
-                          '${player.searchResults.length} tracks',
-                          style: const TextStyle(
-                            color: EmberColors.textMuted,
-                            fontSize: 12,
+                        SliverPadding(
+                          padding: const EdgeInsets.only(bottom: 150),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final song = searchResultsSnapshot[index];
+                                final isCurrent = player.currentSong?.id == song.id;
+
+                                return _SearchResultRow(
+                                  song: song,
+                                  isCurrent: isCurrent,
+                                  isPlaying: isCurrent && player.isPlaying,
+                                  onTap: () {
+                                    player.playCategoryTracks(
+                                      searchResultsSnapshot,
+                                      startIndex: index,
+                                      targetSong: song,
+                                    );
+                                  },
+                                  onOptions: () {
+                                    showModalBottomSheet(
+                                      context: context,
+                                      backgroundColor: Colors.transparent,
+                                      isScrollControlled: true,
+                                      builder: (_) => TrackOptionsSheet(song: song),
+                                    );
+                                  },
+                                );
+                              },
+                              childCount: searchResultsSnapshot.length,
+                            ),
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.only(bottom: 150),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final song = player.searchResults[index];
-                        final isCurrent = player.currentSong?.id == song.id;
-
-                        return _SearchResultRow(
-                          song: song,
-                          isCurrent: isCurrent,
-                          isPlaying: isCurrent && player.isPlaying,
-                          onTap: () {
-                            player.playCategoryTracks(player.searchResults, startIndex: index);
-                          },
-                          onOptions: () {
-                            showModalBottomSheet(
-                              context: context,
-                              backgroundColor: Colors.transparent,
-                              isScrollControlled: true,
-                              builder: (_) => TrackOptionsSheet(song: song),
-                            );
-                          },
-                        );
-                      },
-                      childCount: player.searchResults.length,
-                    ),
-                  ),
+                    );
+                  },
                 ),
               ],
             ] else ...[

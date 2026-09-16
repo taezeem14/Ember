@@ -21,12 +21,13 @@ class Song {
     required this.streamUrl,
     this.lyrics,
     this.isFavorite = false,
-    this.source = 'spotify',
+    this.source = 'unknown',
   });
 
   bool get isSpotify => source == 'spotify' || id.startsWith('sp_') || streamUrl.startsWith('spotify:');
   bool get isYouTube => source == 'youtube' || id.startsWith('yt_') || streamUrl.contains('youtu');
   bool get isJioSaavn => source == 'saavn' || id.startsWith('saavn_') || streamUrl.contains('saavncdn.com');
+  bool get isUnknown => !isSpotify && !isYouTube && !isJioSaavn;
 
   Song copyWith({
     String? id,
@@ -116,9 +117,7 @@ class Song {
       return true;
     }
 
-    if (s.contains('soundhelix.com') ||
-        s.contains('audio-ssl.itunes.apple.com') ||
-        s.contains('itunes.apple.com')) {
+    if (s.contains('soundhelix.com')) {
       return true;
     }
 

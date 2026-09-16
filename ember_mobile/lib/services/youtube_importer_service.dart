@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' hide Playlist;
 import '../models/song.dart';
 import '../models/playlist.dart';
+import 'piped_service.dart';
 
 enum YouTubeImportType { video, playlist, unknown }
 
@@ -140,7 +141,9 @@ class YouTubeImporterService {
     );
   }
 
-  /// Resolve direct playable audio stream URL from a YouTube video ID
+  /// Resolve direct playable audio stream URL from a YouTube video ID.
+  /// Primary: youtube_explode_dart (client-side, no IP mismatch on mobile).
+  /// Fallback: Piped API (server-side proxy, bypasses cipher/throttle issues).
   static Future<String?> getAudioStreamUrl(String videoId) async {
     final cleanId = videoId.replaceFirst('yt_', '').trim();
     if (cleanId.isEmpty) return null;
@@ -150,11 +153,12 @@ class YouTubeImporterService {
       return cached.url;
     }
 
+    // ─── PRIMARY: youtube_explode_dart (client-side) ───
     final yt = YoutubeExplode();
     try {
       final manifest = await yt.videos.streamsClient.getManifest(cleanId).timeout(const Duration(milliseconds: 9000));
 
-      // 1. Android hardware decoder preference: MP4 / AAC audio stream (compatible with all devices like Redmi Note 5 Pro)
+      // 1. Android hardware decoder preference: MP4 / AAC audio stream
       final mp4Audio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
       if (mp4Audio.isNotEmpty) {
         final audioStream = mp4Audio.withHighestBitrate();
@@ -163,7 +167,7 @@ class YouTubeImporterService {
         return url;
       }
 
-      // 2. Muxed MP4 (e.g. 360p video with AAC audio) fallback
+      // 2. Muxed MP4 fallback
       final muxedMp4 = manifest.muxed.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
       if (muxedMp4.isNotEmpty) {
         final stream = muxedMp4.withHighestBitrate();
@@ -172,20 +176,32 @@ class YouTubeImporterService {
         return url;
       }
 
-      // 3. Fallback to any audio stream (e.g. WebM/Opus)
+      // 3. Any audio stream (WebM/Opus)
       if (manifest.audioOnly.isNotEmpty) {
         final audioStream = manifest.audioOnly.withHighestBitrate();
         final url = audioStream.url.toString();
         _streamCache[cleanId] = (url: url, cachedAt: DateTime.now());
         return url;
       }
-      return null;
     } catch (e) {
-      debugPrint('Error resolving YouTube audio stream for $cleanId: $e');
-      return null;
+      debugPrint('[YouTube] youtube_explode_dart failed for $cleanId: $e — trying Piped fallback');
     } finally {
       yt.close();
     }
+
+    // ─── FALLBACK: Piped API (server-side proxy) ───
+    try {
+      final pipedUrl = await PipedService.getAudioStream(cleanId);
+      if (pipedUrl != null && pipedUrl.isNotEmpty) {
+        _streamCache[cleanId] = (url: pipedUrl, cachedAt: DateTime.now());
+        debugPrint('[YouTube] Piped fallback resolved for $cleanId');
+        return pipedUrl;
+      }
+    } catch (e) {
+      debugPrint('[YouTube] Piped fallback also failed for $cleanId: $e');
+    }
+
+    return null;
   }
 
   /// Non-blocking prefetch of streams for the first few tracks of a playlist
@@ -393,7 +409,7 @@ class YouTubeImporterService {
       final yt = YoutubeExplode();
       try {
         final video = await yt.videos.get(videoId);
-        final streamUrl = await getAudioStreamUrl(videoId) ?? 'https://www.youtube.com/watch?v=$videoId';
+        final streamUrl = await getAudioStreamUrl(videoId) ?? '';
         final artwork = video.thumbnails.highResUrl.isNotEmpty
             ? video.thumbnails.highResUrl
             : video.thumbnails.standardResUrl;
@@ -486,11 +502,71 @@ class YouTubeImporterService {
           if (songs.length >= limit) break;
         }
 
-        return songs;
+        if (songs.isNotEmpty) return songs;
       }
     } catch (e) {
       debugPrint('InnerTube search error: $e');
     }
+
+    // Fallback 1: YoutubeExplode search
+    try {
+      final yt = YoutubeExplode();
+      try {
+        final searchList = await yt.search.search(query).timeout(const Duration(seconds: 6));
+        final fallbackSongs = <Song>[];
+        for (final video in searchList.take(limit)) {
+          fallbackSongs.add(
+            Song(
+              id: 'yt_${video.id.value}',
+              title: video.title,
+              artist: video.author,
+              duration: video.duration ?? const Duration(minutes: 3, seconds: 30),
+              artworkUrl: video.thumbnails.highResUrl.isNotEmpty
+                  ? video.thumbnails.highResUrl
+                  : 'https://i.ytimg.com/vi/${video.id.value}/hqdefault.jpg',
+              streamUrl: 'https://www.youtube.com/watch?v=${video.id.value}',
+              source: 'youtube',
+            ),
+          );
+        }
+        if (fallbackSongs.isNotEmpty) {
+          debugPrint('[YouTube Search] Fallback via YoutubeExplode found ${fallbackSongs.length} tracks');
+          return fallbackSongs;
+        }
+      } finally {
+        yt.close();
+      }
+    } catch (e) {
+      debugPrint('[YouTube Search] YoutubeExplode fallback error: $e');
+    }
+
+    // Fallback 2: Piped API search
+    try {
+      final pipedItems = await PipedService.search(query);
+      if (pipedItems.isNotEmpty) {
+        final pipedSongs = pipedItems.take(limit).map((item) {
+          final rawUrl = item['url'] as String? ?? '';
+          final vid = rawUrl.replaceFirst('/watch?v=', '').trim();
+          final durSecs = (item['duration'] as num?)?.toInt() ?? 210;
+          return Song(
+            id: 'yt_$vid',
+            title: item['title'] as String? ?? 'YouTube Track',
+            artist: item['uploaderName'] as String? ?? 'Artist',
+            duration: Duration(seconds: durSecs),
+            artworkUrl: item['thumbnail'] as String? ?? (vid.isNotEmpty ? 'https://i.ytimg.com/vi/$vid/hqdefault.jpg' : ''),
+            streamUrl: 'https://www.youtube.com/watch?v=$vid',
+            source: 'youtube',
+          );
+        }).toList();
+        if (pipedSongs.isNotEmpty) {
+          debugPrint('[YouTube Search] Fallback via Piped found ${pipedSongs.length} tracks');
+          return pipedSongs;
+        }
+      }
+    } catch (e) {
+      debugPrint('[YouTube Search] Piped search fallback error: $e');
+    }
+
     return [];
   }
 }

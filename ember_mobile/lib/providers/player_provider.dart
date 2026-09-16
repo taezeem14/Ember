@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 import '../models/playlist.dart';
 import '../services/audio_handler.dart';
@@ -154,6 +155,12 @@ class PlayerProvider extends ChangeNotifier {
       onSkipNext: () => skipNext(),
       onSkipPrevious: () => skipPrevious(),
       onCompleted: () => _handleSongCompleted(),
+      onPlaybackFailed: (failedSong) {
+        debugPrint('[PlayerProvider] Stream failed for: ${failedSong.title}');
+        _consecutiveStreamFailures++;
+        _isPlaying = false;
+        notifyListeners();
+      },
     );
 
     // Apply saved EQ preset & settings
@@ -196,6 +203,10 @@ class PlayerProvider extends ChangeNotifier {
 
     _stateSub = _audioHandler.player.playerStateStream.listen((state) {
       final playing = state.playing;
+      if (playing && state.processingState == ProcessingState.ready) {
+        // Stream is actively playing and loaded — reset failure counter
+        _consecutiveStreamFailures = 0;
+      }
       if (_isPlaying != playing) {
         _isPlaying = playing;
         notifyListeners();
@@ -209,13 +220,13 @@ class PlayerProvider extends ChangeNotifier {
     if (_consecutiveStreamFailures > _maxConsecutiveFailures) {
       debugPrint('Stopping auto-advance: $_consecutiveStreamFailures consecutive stream failures');
       _consecutiveStreamFailures = 0;
-      // Don't stop playback entirely — just halt advancing so the user can manually pick a song
+      // Halt auto-advancing so the player doesn't loop infinitely across failing songs
       return;
     }
 
     if (_repeatMode == 'one') {
       if (_currentIndex >= 0 && _currentIndex < _queue.length) {
-        await playSong(_queue[_currentIndex]);
+        await playSong(_queue[_currentIndex], isAutoAdvance: true);
       } else {
         await _audioHandler.seek(Duration.zero);
         await _audioHandler.play();
@@ -224,14 +235,15 @@ class PlayerProvider extends ChangeNotifier {
     }
 
     if (_currentIndex < _queue.length - 1) {
-      await skipNext();
+      _currentIndex++;
+      await playSong(_queue[_currentIndex], isAutoAdvance: true);
       return;
     }
 
     // At the end of queue
     if (_repeatMode == 'all' && _queue.isNotEmpty) {
       _currentIndex = 0;
-      await playSong(_queue[0]);
+      await playSong(_queue[0], isAutoAdvance: true);
       return;
     }
 
@@ -241,14 +253,16 @@ class PlayerProvider extends ChangeNotifier {
       _queue.add(nextSong);
       _currentIndex = _queue.length - 1;
       _recommendations.removeAt(0);
-      await playSong(nextSong);
+      await playSong(nextSong, isAutoAdvance: true);
       return;
     }
   }
 
-  Future<void> playSong(Song song, {List<Song>? contextQueue}) async {
-    // Reset failure counter — a new user-initiated or successful play attempt breaks any failure loop
-    _consecutiveStreamFailures = 0;
+  Future<void> playSong(Song song, {List<Song>? contextQueue, bool isAutoAdvance = false}) async {
+    if (!isAutoAdvance) {
+      // User-initiated tap or explicit playlist selection: reset failure counter
+      _consecutiveStreamFailures = 0;
+    }
     
     if (contextQueue != null) {
       _queue = List.from(contextQueue);
@@ -489,11 +503,16 @@ class PlayerProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> playCategoryTracks(List<Song> tracks, {int startIndex = 0}) async {
+  Future<void> playCategoryTracks(List<Song> tracks, {int startIndex = 0, Song? targetSong}) async {
     final validTracks = tracks.where((s) => !Song.isPlaceholder(s)).toList();
     if (validTracks.isEmpty) return;
     _queue = List.from(validTracks);
-    _currentIndex = startIndex.clamp(0, _queue.length - 1);
+    if (targetSong != null) {
+      final targetIdx = _queue.indexWhere((s) => s.id == targetSong.id);
+      _currentIndex = targetIdx != -1 ? targetIdx : startIndex.clamp(0, _queue.length - 1);
+    } else {
+      _currentIndex = startIndex.clamp(0, _queue.length - 1);
+    }
     notifyListeners();
     await playSong(_queue[_currentIndex]);
   }

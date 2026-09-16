@@ -95,7 +95,7 @@ class SpotifyService {
   static ({SpotifyEntityType type, String id})? parseSpotifyUrl(String input) {
     final clean = input.trim();
     final regExp = RegExp(
-      r'(?:spotify:|(?:https?:\/\/open\.spotify\.com\/(?:embed\/)?))(track|album|playlist)[\/:]([a-zA-Z0-9]{22})',
+      r'(?:spotify:|(?:https?:\/\/open\.spotify\.com\/(?:intl-[a-z]{2,5}\/)?(?:embed\/)?))(track|album|playlist)[\/:]([a-zA-Z0-9]{22})',
       caseSensitive: false,
     );
     final match = regExp.firstMatch(clean);

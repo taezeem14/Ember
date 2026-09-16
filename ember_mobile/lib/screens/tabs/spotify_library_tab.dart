@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../../models/song.dart';
 import '../../models/playlist.dart';
 import '../../providers/player_provider.dart';
 import '../../theme/ember_theme.dart';
@@ -478,7 +479,7 @@ class _SpotifyLibraryTabState extends State<SpotifyLibraryTab> {
                         // Width of song in history is identical to queue and search
                         return InkWell(
                           onTap: () {
-                            player.playCategoryTracks(player.history, startIndex: index);
+                            player.playCategoryTracks(List<Song>.from(player.history), startIndex: index, targetSong: song);
                           },
                           splashColor: EmberColors.electricBlue.withValues(alpha: 0.15),
                           highlightColor: EmberColors.charcoalCard,

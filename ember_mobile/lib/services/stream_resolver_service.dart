@@ -1,9 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../models/song.dart';
 import 'catalog_service.dart';
+import 'piped_service.dart';
 import 'youtube_importer_service.dart';
 
 class StreamResolverService {
@@ -108,8 +107,7 @@ class StreamResolverService {
         cleanT,
       ];
 
-      Video? bestMatch;
-      int highestScore = -100;
+      final scoredCandidates = <({Video video, int score})>[];
 
       for (final query in queries) {
         try {
@@ -121,20 +119,45 @@ class StreamResolverService {
               targetDuration: song.duration,
               candidate: video,
             );
-            if (score > highestScore) {
-              highestScore = score;
-              bestMatch = video;
+            if (score > -20) {
+              scoredCandidates.add((video: video, score: score));
             }
           }
-          if (highestScore >= 50) break; // Found high-confidence match
+          if (scoredCandidates.any((c) => c.score >= 50)) break; // Found high-confidence match
         } catch (_) {
           continue;
         }
       }
 
-      if (bestMatch != null && highestScore > -20) {
-        final streamUrl = await YouTubeImporterService.getAudioStreamUrl(bestMatch.id.value);
-        return streamUrl;
+      scoredCandidates.sort((a, b) => b.score.compareTo(a.score));
+
+      // Try top 3 scored candidates in order
+      for (final candidate in scoredCandidates.take(3)) {
+        final streamUrl = await YouTubeImporterService.getAudioStreamUrl(candidate.video.id.value);
+        if (streamUrl != null && streamUrl.isNotEmpty) {
+          return streamUrl;
+        }
+      }
+
+      // Secondary fallback: Piped search + stream proxy
+      try {
+        final searchTerms = song.artist != 'Unknown Artist' && song.artist.isNotEmpty
+            ? '${song.title} ${song.artist}'
+            : song.title;
+        final pipedResults = await PipedService.search(searchTerms);
+        for (final item in pipedResults.take(3)) {
+          final itemUrl = item['url'] as String? ?? '';
+          final vid = itemUrl.replaceFirst('/watch?v=', '').trim();
+          if (vid.isNotEmpty) {
+            final pipedStream = await PipedService.getAudioStream(vid);
+            if (pipedStream != null && pipedStream.isNotEmpty) {
+              debugPrint('[Piped Fallback] Resolved stream for "${song.title}" [vid=$vid]');
+              return pipedStream;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Piped search fallback error: $e');
       }
     } catch (e) {
       debugPrint('YouTube stream resolution error for "${song.title}": $e');
@@ -159,20 +182,20 @@ class StreamResolverService {
     }
 
     // ─── 2. DIRECT MEDIA STREAMS (Already resolved or direct audio file) ───
+    // NOTE: googlevideo.com URLs are NOT trusted here — they expire after ~4h
+    // and cause 403 Forbidden. Let the YouTube engine re-resolve them.
     if (s.isNotEmpty &&
         !s.startsWith('spotify:') &&
         !s.contains('youtube.com/watch') &&
         !s.contains('youtu.be/') &&
+        !s.contains('googlevideo.com') &&
         (s.contains('saavncdn.com') ||
-         s.contains('itunes.apple.com') ||
-         s.contains('googlevideo.com') ||
          s.endsWith('.mp3') ||
          s.endsWith('.m4a') ||
          s.endsWith('.mp4') ||
          s.endsWith('.aac') ||
          s.contains('.m4a') ||
-         s.contains('.mp3') ||
-         (s.contains('rr') && s.contains('.googlevideo.com')))) {
+         s.contains('.mp3'))) {
       return [s];
     }
 
@@ -214,10 +237,12 @@ class StreamResolverService {
     }
 
     // ─── 4. SPOTIFY ENGINE (Spotube Architecture) ───
-    // Spotube candidate matching against YouTube Music Topic studio tracks
-    // Filters out noise (live/reverb/parody) to deliver true studio audio!
+    // Primary: YouTube Music matching (full song audio via youtube_explode + Piped)
+    // Secondary: JioSaavn 320kbps (same song, different source)
+    // Tertiary: iTunes preview (30-sec, last resort only)
     final isSp = song.isSpotify || song.id.startsWith('sp_') || s.startsWith('spotify:');
     if (isSp) {
+      // 4a. YouTube Music matching (Spotube algorithm)
       try {
         debugPrint('[Spotube Engine] Resolving studio audio for Spotify track: "${song.title}" by "${song.artist}"');
         final spotubeStream = await resolveFromYouTube(song);
@@ -226,27 +251,29 @@ class StreamResolverService {
           return [spotubeStream];
         }
       } catch (e) {
-        debugPrint('[Spotube Engine] Match error: $e');
+        debugPrint('[Spotube Engine] YouTube match error: $e');
       }
 
-      // Secondary Spotube fallback: iTunes 256kbps AAC preview
-      final meta = YouTubeImporterService.parseYouTubeMetadata(song.title, song.artist);
+      // 4b. JioSaavn 320kbps fallback (full song, high quality)
       try {
-        final itunesUrl = Uri.parse(
-          'https://itunes.apple.com/search?term=${Uri.encodeComponent(meta.searchQuery)}&entity=song&limit=3',
-        );
-        final resp = await http.get(itunesUrl).timeout(const Duration(seconds: 4));
-        if (resp.statusCode == 200) {
-          final data = jsonDecode(resp.body) as Map<String, dynamic>;
-          final list = data['results'] as List? ?? [];
-          for (final item in list) {
-            final prev = item['previewUrl'] as String?;
-            if (prev != null && prev.isNotEmpty) {
-              return [prev];
-            }
+        final query = song.artist != 'Unknown Artist' && song.artist.isNotEmpty
+            ? '${song.title} ${song.artist}'
+            : song.title;
+        final saavnMatches = await CatalogService.searchOnline(query, limit: 3);
+        for (final match in saavnMatches) {
+          if (match.streamUrl.isNotEmpty && match.streamUrl.contains('saavncdn.com')) {
+            debugPrint('[Spotube Engine] JioSaavn 320kbps fallback matched for "${song.title}"');
+            return [match.streamUrl];
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[Spotube Engine] JioSaavn fallback error: $e');
+      }
+
+      // 4c. iTunes preview (30-sec, absolute last resort)
+      if (s.contains('itunes.apple.com') && s.isNotEmpty) {
+        candidates.add(s);
+      }
 
       return candidates;
     }

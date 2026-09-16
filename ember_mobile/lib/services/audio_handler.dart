@@ -5,7 +5,6 @@ import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 import 'stream_resolver_service.dart';
-import 'youtube_importer_service.dart';
 
 
 Future<AudioHandler> initAudioHandler() async {
@@ -41,6 +40,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   AsyncCallback? _onSkipNext;
   AsyncCallback? _onSkipPrevious;
   AsyncCallback? _onCompleted;
+  ValueChanged<Song>? _onPlaybackFailed;
 
   /// Guard to prevent ProcessingState.completed from firing _onCompleted
   /// multiple times for the same track (fixes the "shifts songs by itself" bug)
@@ -124,10 +124,12 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     AsyncCallback? onSkipNext,
     AsyncCallback? onSkipPrevious,
     AsyncCallback? onCompleted,
+    ValueChanged<Song>? onPlaybackFailed,
   }) {
     _onSkipNext = onSkipNext;
     _onSkipPrevious = onSkipPrevious;
     _onCompleted = onCompleted;
+    _onPlaybackFailed = onPlaybackFailed;
   }
 
   void _initAudioStreams() {
@@ -154,7 +156,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             ProcessingState.buffering: AudioProcessingState.buffering,
             ProcessingState.ready: AudioProcessingState.ready,
             ProcessingState.completed: AudioProcessingState.completed,
-          }[_player.processingState]!,
+          }[_player.processingState] ?? AudioProcessingState.idle,
           playing: playing,
           updatePosition: _player.position,
           bufferedPosition: _player.bufferedPosition,
@@ -203,7 +205,10 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       final isLocal = s.startsWith('/') || s.startsWith('file://');
 
       if (isLocal) {
-        final localPath = s.replaceFirst('file://', '');
+        var localPath = s.replaceFirst('file://', '');
+        if (Platform.isWindows && localPath.startsWith('/') && localPath.length > 2 && localPath[2] == ':') {
+          localPath = localPath.substring(1);
+        }
         final file = File(localPath);
         if (await file.exists()) {
           await _player.setFilePath(localPath);
@@ -220,35 +225,6 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
 
       // Online cross-engine stream resolution with resilient candidate fallbacks
       final targetSong = song;
-
-      // For YouTube songs, try direct video ID resolution first (fast path)
-      final isYtSong = song.id.startsWith('yt_') || s.contains('youtube.com/watch') || s.contains('youtu.be/') || song.source == 'youtube';
-      if (isYtSong) {
-        String? videoId;
-        if (song.id.startsWith('yt_')) videoId = song.id.replaceFirst('yt_', '');
-        videoId ??= YouTubeImporterService.extractVideoId(s);
-        if (videoId != null && videoId.isNotEmpty) {
-          try {
-            final directStream = await YouTubeImporterService.getAudioStreamUrl(videoId);
-            if (_currentSong != targetSong) return;
-            if (directStream != null && directStream.isNotEmpty) {
-              try {
-                await _player.setUrl(directStream);
-                if (_currentSong != targetSong) return;
-                await _player.play();
-                debugPrint('Playing YouTube "${song.title}" via direct stream [vid=$videoId]');
-                await _updateAudioEffects();
-                if (_eqEnabled) await applyEqualizerPreset(_currentPreset);
-                return;
-              } catch (e) {
-                debugPrint('YouTube direct stream playback failed for "$videoId": $e');
-              }
-            }
-          } catch (e) {
-            debugPrint('YouTube direct resolution failed for "$videoId": $e');
-          }
-        }
-      }
 
       // General stream resolver (source-aware: YouTube songs stay on YouTube, JioSaavn songs stay on JioSaavn)
       final candidates = await StreamResolverService.resolvePlayableStreamCandidates(song);
@@ -280,6 +256,7 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
             playing: false,
           ),
         );
+        _onPlaybackFailed?.call(song);
         return;
       }
 

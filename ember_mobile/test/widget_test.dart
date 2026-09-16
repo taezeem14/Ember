@@ -413,8 +413,9 @@ void main() {
         artworkUrl: '',
         streamUrl: 'https://example.com/audio.m4a',
       );
-      expect(defaultSong.source, 'spotify');
-      expect(defaultSong.isSpotify, isTrue);
+      expect(defaultSong.source, 'unknown');
+      expect(defaultSong.isUnknown, isTrue);
+      expect(defaultSong.isSpotify, isFalse);
       expect(defaultSong.isYouTube, isFalse);
       expect(defaultSong.isJioSaavn, isFalse);
 
