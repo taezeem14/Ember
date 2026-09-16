@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../models/song.dart';
+import '../models/playlist.dart';
 import '../providers/player_provider.dart';
 import '../services/catalog_service.dart';
+import '../services/spotify_service.dart';
 import '../theme/ember_theme.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/spectrum_bars.dart';
@@ -29,158 +31,14 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
     super.dispose();
   }
 
-  void _showYouTubeImportDialog(BuildContext context, PlayerProvider player) {
-    final urlController = TextEditingController();
-    bool isImporting = false;
-    String? statusMsg;
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: EmberColors.surface,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) {
-          return SafeArea(
-            child: Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-                left: 20,
-                right: 20,
-                top: 16,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 16),
-                      decoration: BoxDecoration(
-                        color: EmberColors.textMuted.withValues(alpha: 0.4),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const FaIcon(FontAwesomeIcons.youtube, size: 18, color: Colors.redAccent),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Import from YouTube',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: EmberColors.textPrimary,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                          ),
-                          const Text(
-                            'Paste video or playlist link',
-                            style: TextStyle(color: EmberColors.textMuted, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: urlController,
-                    autofocus: true,
-                    style: const TextStyle(color: EmberColors.textPrimary, fontSize: 13),
-                    decoration: InputDecoration(
-                      hintText: 'https://www.youtube.com/watch?v=... or playlist',
-                      hintStyle: const TextStyle(color: EmberColors.textMuted, fontSize: 13),
-                      filled: true,
-                      fillColor: EmberColors.surfaceContainerLow,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: EmberColors.outlineVariant.withValues(alpha: 0.5)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: EmberColors.primaryAmber),
-                      ),
-                    ),
-                  ),
-                  if (statusMsg != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        statusMsg!,
-                        style: TextStyle(
-                          color: statusMsg!.contains('failed') ? EmberColors.error : EmberColors.primaryAmberHi,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 46,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: EmberColors.primaryAmber,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      onPressed: isImporting
-                          ? null
-                          : () async {
-                              final text = urlController.text.trim();
-                              if (text.isEmpty) return;
-
-                              setModalState(() {
-                                isImporting = true;
-                                statusMsg = 'Connecting to YouTube and parsing...';
-                              });
-
-                              final msg = await player.importYouTubeUrl(text);
-                              setModalState(() {
-                                isImporting = false;
-                                statusMsg = msg;
-                              });
-
-                              if (!msg.contains('failed')) {
-                                Future.delayed(const Duration(milliseconds: 900), () {
-                                  if (ctx.mounted) Navigator.pop(ctx);
-                                });
-                              }
-                            },
-                      icon: isImporting
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: EmberColors.obsidianBase))
-                          : const FaIcon(FontAwesomeIcons.download, size: 14, color: EmberColors.obsidianBase),
-                      label: Text(
-                        isImporting ? 'Importing...' : 'Import to Ember',
-                        style: const TextStyle(color: EmberColors.obsidianBase, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: EmberColors.obsidianBase,
       body: SafeArea(
         child: Column(
@@ -224,13 +82,13 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                     ],
                   ),
                   const Spacer(),
-                  // YouTube URL Import Button
+                  // Import Spotify / YouTube Link Button
                   IconButton(
-                    icon: const FaIcon(FontAwesomeIcons.youtube, color: Colors.redAccent, size: 20),
-                    tooltip: 'Import from YouTube',
-                    onPressed: () => _showYouTubeImportDialog(context, player),
+                    icon: const FaIcon(FontAwesomeIcons.link, color: EmberColors.primaryAmber, size: 16),
+                    tooltip: 'Import Spotify / YouTube Link',
+                    onPressed: () => _showImportUrlDialog(context, player),
                   ),
-                  // Settings & Creator Button (Replaced EQ on homescreen as requested)
+                  // Settings & Creator Button
                   IconButton(
                     icon: const FaIcon(FontAwesomeIcons.gear, color: EmberColors.textSecondary, size: 18),
                     tooltip: 'Settings & Creator',
@@ -261,7 +119,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                         controller: _searchController,
                         style: const TextStyle(color: EmberColors.textPrimary, fontSize: 13),
                         decoration: const InputDecoration(
-                          hintText: 'Search songs, artists, albums, or paste YouTube link...',
+                          hintText: 'Search music or paste Spotify / YouTube link...',
                           hintStyle: TextStyle(color: EmberColors.textMuted, fontSize: 13),
                           border: InputBorder.none,
                           isDense: true,
@@ -323,7 +181,11 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                       ),
                       child: Row(
                         children: [
-                          Text(cat.emoji, style: const TextStyle(fontSize: 13)),
+                          FaIcon(
+                            cat.icon,
+                            size: 12,
+                            color: isSelected ? EmberColors.primaryAmber : EmberColors.textSecondary,
+                          ),
                           const SizedBox(width: 6),
                           Text(
                             cat.title,
@@ -341,7 +203,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
               ),
             ),
 
-            // Sub-tabs (Discover, Queue, Playlists, Favorites, Downloads, History)
+            // Sub-tabs (Discover, Spotify, YouTube, Queue, Playlists, Favorites, Downloads, History, Settings)
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -351,6 +213,28 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                     label: 'Discover',
                     active: player.activeTab == 'discover',
                     onTap: () => player.setTab('discover'),
+                  ),
+                  const SizedBox(width: 6),
+                  _TabPill(
+                    label: 'Spotify Hits',
+                    active: player.activeTab == 'spotify',
+                    onTap: () {
+                      player.setTab('spotify');
+                      if (player.spotifyTracks.isEmpty) {
+                        player.loadSpotifyChart(player.activeSpotifyChart);
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 6),
+                  _TabPill(
+                    label: 'YouTube Music',
+                    active: player.activeTab == 'youtube',
+                    onTap: () {
+                      player.setTab('youtube');
+                      if (player.youtubeTracks.isEmpty) {
+                        player.loadYouTubeTrending();
+                      }
+                    },
                   ),
                   const SizedBox(width: 6),
                   _TabPill(
@@ -413,14 +297,18 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
     switch (player.activeTab) {
       case 'discover':
         return _buildDiscoverTab(context, player);
+      case 'spotify':
+        return _buildSpotifyTab(context, player);
+      case 'youtube':
+        return _buildYouTubeTab(context, player);
       case 'playlists':
         return _buildPlaylistsTab(context, player);
       case 'favorites':
-        return _buildSongList(context, player, player.favorites, emptyMsg: 'No favorite tracks pinned yet ♡');
+        return _buildSongList(context, player, player.favorites, emptyMsg: 'No favorite tracks pinned yet');
       case 'downloads':
         return _buildDownloadsTab(context, player);
       case 'history':
-        return _buildSongList(context, player, player.history, emptyMsg: 'No playback history yet');
+        return _buildHistoryTab(context, player);
       case 'settings':
         return const SettingsContent();
       case 'queue':
@@ -456,7 +344,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(cat.emoji, style: const TextStyle(fontSize: 36)),
+            FaIcon(cat.icon, size: 36, color: EmberColors.primaryAmber),
             const SizedBox(height: 12),
             Text('No tracks loaded for ${cat.title}', style: const TextStyle(color: EmberColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
@@ -484,7 +372,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                   children: [
                     Row(
                       children: [
-                        Text(cat.emoji, style: const TextStyle(fontSize: 15)),
+                        FaIcon(cat.icon, size: 14, color: EmberColors.primaryAmber),
                         const SizedBox(width: 8),
                         Flexible(
                           child: Text(
@@ -635,31 +523,34 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
           ),
         ),
 
-        // Reorderable Active Queue
-        SliverReorderableList(
-          itemCount: queue.length,
-          onReorder: (oldIdx, newIdx) => player.reorderQueue(oldIdx, newIdx),
-          itemBuilder: (context, index) {
-            final song = queue[index];
-            final isCurrent = player.currentSong?.id == song.id;
+        // Reorderable Active Queue with identical horizontal padding to History
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          sliver: SliverReorderableList(
+            itemCount: queue.length,
+            onReorder: (oldIdx, newIdx) => player.reorderQueue(oldIdx, newIdx),
+            itemBuilder: (context, index) {
+              final song = queue[index];
+              final isCurrent = player.currentSong?.id == song.id;
 
-            return ReorderableDelayedDragStartListener(
-              key: ValueKey('queue_${song.id}_$index'),
-              index: index,
-              child: Dismissible(
-                key: ValueKey('dismiss_${song.id}_$index'),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 20),
-                  color: EmberColors.error.withValues(alpha: 0.8),
-                  child: const FaIcon(FontAwesomeIcons.trashCan, color: Colors.white, size: 16),
+              return ReorderableDelayedDragStartListener(
+                key: ValueKey('queue_${song.id}_$index'),
+                index: index,
+                child: Dismissible(
+                  key: ValueKey('dismiss_${song.id}_$index'),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    color: EmberColors.error.withValues(alpha: 0.8),
+                    child: const FaIcon(FontAwesomeIcons.trashCan, color: Colors.white, size: 16),
+                  ),
+                  onDismissed: (_) => player.removeTrackAt(index),
+                  child: _buildTrackRow(context, player, song, isCurrent, isQueue: true),
                 ),
-                onDismissed: (_) => player.removeTrackAt(index),
-                child: _buildTrackRow(context, player, song, isCurrent, isQueue: true),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
 
         // Recommendations Section
@@ -778,19 +669,6 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                 children: [
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.redAccent.withValues(alpha: 0.18),
-                      foregroundColor: Colors.redAccent,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
-                    ),
-                    onPressed: () => _showYouTubeImportDialog(context, player),
-                    icon: const FaIcon(FontAwesomeIcons.youtube, size: 12),
-                    label: const Text('Import Mix/PL', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
                       backgroundColor: EmberColors.primaryAmber.withValues(alpha: 0.18),
                       foregroundColor: EmberColors.primaryAmber,
                       elevation: 0,
@@ -824,7 +702,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                             ),
                           ],
                         ),
-                      );
+                      ).then((_) => ctrl.dispose());
                     },
                     icon: const FaIcon(FontAwesomeIcons.plus, size: 11),
                     label: const Text('New', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
@@ -847,36 +725,20 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                         const Text('No playlists saved yet', style: TextStyle(color: EmberColors.textPrimary, fontSize: 15, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 6),
                         const Text(
-                          'Import any YouTube Mix / Playlist URL or create custom playlists saved to your device.',
+                          'Create and organize custom playlists saved locally to your device.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: EmberColors.textMuted, fontSize: 12),
                         ),
                         const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.redAccent,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
-                              ),
-                              onPressed: () => _showYouTubeImportDialog(context, player),
-                              icon: const FaIcon(FontAwesomeIcons.youtube, size: 13),
-                              label: const Text('Import YouTube Mix', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                            ),
-                            const SizedBox(width: 10),
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: EmberColors.primaryAmber,
-                                foregroundColor: EmberColors.obsidianBase,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
-                              ),
-                              onPressed: () => player.createPlaylist('My Top Mix'),
-                              icon: const FaIcon(FontAwesomeIcons.plus, size: 11),
-                              label: const Text('New Playlist', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                            ),
-                          ],
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: EmberColors.primaryAmber,
+                            foregroundColor: EmberColors.obsidianBase,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+                          ),
+                          onPressed: () => player.createPlaylist('My Top Mix'),
+                          icon: const FaIcon(FontAwesomeIcons.plus, size: 11),
+                          label: const Text('New Playlist', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                         ),
                       ],
                     ),
@@ -1020,6 +882,477 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
     );
   }
 
+  // Dedicated Playback History Tab with Clear Action
+  Widget _buildHistoryTab(BuildContext context, PlayerProvider player) {
+    final history = player.history;
+
+    if (history.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FaIcon(FontAwesomeIcons.clockRotateLeft, size: 38, color: EmberColors.textMuted),
+            SizedBox(height: 12),
+            Text(
+              'No playback history yet',
+              style: TextStyle(color: EmberColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 6),
+            Text(
+              'Tracks you play will show up here.',
+              style: TextStyle(color: EmberColors.textMuted, fontSize: 12),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'PLAYBACK HISTORY (${history.length})',
+                style: const TextStyle(
+                  color: EmberColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              InkWell(
+                onTap: () => _showClearHistoryDialog(context, player),
+                borderRadius: BorderRadius.circular(6),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FaIcon(FontAwesomeIcons.trashCan, size: 12, color: EmberColors.textMuted),
+                      SizedBox(width: 4),
+                      Text('Clear', style: TextStyle(color: EmberColors.textMuted, fontSize: 11)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+            itemCount: history.length,
+            itemBuilder: (context, index) {
+              final song = history[index];
+              final isCurrent = player.currentSong?.id == song.id;
+              return _buildTrackRow(context, player, song, isCurrent, contextQueue: history);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showClearHistoryDialog(BuildContext context, PlayerProvider player) {
+    showDialog(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: EmberColors.surfaceContainerHigh,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            FaIcon(FontAwesomeIcons.clockRotateLeft, size: 16, color: EmberColors.primaryAmber),
+            SizedBox(width: 10),
+            Text('Clear History?', style: TextStyle(color: EmberColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to clear your listening history? This cannot be undone.',
+          style: TextStyle(color: EmberColors.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dCtx),
+            child: const Text('Cancel', style: TextStyle(color: EmberColors.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: EmberColors.error,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () async {
+              Navigator.pop(dCtx);
+              await player.clearHistory();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    backgroundColor: EmberColors.surfaceContainerHigh,
+                    content: Text('Playback history cleared', style: TextStyle(color: EmberColors.primaryAmberHi)),
+                  ),
+                );
+              }
+            },
+            child: const Text('Clear All', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Spotify Top Charts & Library Browser (Spotube reference)
+  Widget _buildSpotifyTab(BuildContext context, PlayerProvider player) {
+    final charts = SpotifyService.curatedCharts;
+    final activeKey = player.activeSpotifyChart;
+    final activeChart = charts.firstWhere((c) => c.key == activeKey, orElse: () => charts.first);
+    final tracks = player.spotifyTracks;
+
+    return Column(
+      children: [
+        // Curated Spotify Charts Pill Selector
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          child: Row(
+            children: charts.map((c) {
+              final isSel = c.key == activeKey;
+              return Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: InkWell(
+                  onTap: () => player.loadSpotifyChart(c.key),
+                  borderRadius: BorderRadius.circular(9999),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isSel ? const Color(0xFF1DB954).withValues(alpha: 0.2) : EmberColors.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(9999),
+                      border: Border.all(
+                        color: isSel ? const Color(0xFF1DB954) : EmberColors.outlineVariant.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        FaIcon(FontAwesomeIcons.spotify, size: 12, color: isSel ? const Color(0xFF1DB954) : EmberColors.textMuted),
+                        const SizedBox(width: 6),
+                        Text(
+                          c.title,
+                          style: TextStyle(
+                            color: isSel ? const Color(0xFF1DB954) : EmberColors.textSecondary,
+                            fontSize: 12,
+                            fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+
+        // Active Chart Banner & Quick Play
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 6, 18, 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      activeChart.title.toUpperCase(),
+                      style: const TextStyle(
+                        color: EmberColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${tracks.length} tracks • ${activeChart.subtitle}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: EmberColors.textMuted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              if (tracks.isNotEmpty)
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1DB954),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+                  ),
+                  onPressed: () => player.playPlaylist(
+                    Playlist(
+                      id: 'sp_${activeChart.key}',
+                      title: activeChart.title,
+                      description: activeChart.subtitle,
+                      songs: tracks,
+                      createdAt: DateTime.now(),
+                      coverUrl: activeChart.coverUrl,
+                    ),
+                  ),
+                  icon: const FaIcon(FontAwesomeIcons.play, size: 11),
+                  label: const Text('Play Chart', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)),
+                ),
+            ],
+          ),
+        ),
+
+        // Tracks or Loader
+        Expanded(
+          child: player.isLoadingSpotify && tracks.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFF1DB954)),
+                      SizedBox(height: 14),
+                      Text('Connecting to Spotify catalog...', style: TextStyle(color: EmberColors.textSecondary, fontSize: 13)),
+                    ],
+                  ),
+                )
+              : tracks.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const FaIcon(FontAwesomeIcons.spotify, size: 36, color: Color(0xFF1DB954)),
+                          const SizedBox(height: 12),
+                          Text('No tracks loaded for ${activeChart.title}', style: const TextStyle(color: EmberColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1DB954)),
+                            onPressed: () => player.loadSpotifyChart(activeChart.key),
+                            child: const Text('Load Chart', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                      itemCount: tracks.length,
+                      itemBuilder: (context, index) {
+                        final song = tracks[index];
+                        final isCurrent = player.currentSong?.id == song.id;
+                        return _buildTrackRow(context, player, song, isCurrent, contextQueue: tracks);
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+
+  // YouTube Music Explorer (Spotube reference)
+  Widget _buildYouTubeTab(BuildContext context, PlayerProvider player) {
+    final tracks = player.youtubeTracks;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 8, 18, 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      FaIcon(FontAwesomeIcons.youtube, size: 14, color: Color(0xFFFF0000)),
+                      SizedBox(width: 8),
+                      Text(
+                        'YOUTUBE MUSIC EXPLORER',
+                        style: TextStyle(
+                          color: EmberColors.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 2),
+                  Text('Trending hits & official artist uploads', style: TextStyle(color: EmberColors.textMuted, fontSize: 11)),
+                ],
+              ),
+              if (tracks.isNotEmpty)
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF0000),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9999)),
+                  ),
+                  onPressed: () => player.playPlaylist(
+                    Playlist(
+                      id: 'yt_trending',
+                      title: 'YouTube Trending',
+                      description: 'Trending YouTube Music Tracks',
+                      songs: tracks,
+                      createdAt: DateTime.now(),
+                    ),
+                  ),
+                  icon: const FaIcon(FontAwesomeIcons.play, size: 11),
+                  label: const Text('Play All', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: player.isLoadingYouTube && tracks.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFFFF0000)),
+                      SizedBox(height: 14),
+                      Text('Connecting to YouTube Music...', style: TextStyle(color: EmberColors.textSecondary, fontSize: 13)),
+                    ],
+                  ),
+                )
+              : tracks.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const FaIcon(FontAwesomeIcons.youtube, size: 36, color: Color(0xFFFF0000)),
+                          const SizedBox(height: 12),
+                          const Text('No tracks loaded from YouTube', style: TextStyle(color: EmberColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF0000)),
+                            onPressed: () => player.loadYouTubeTrending(),
+                            child: const Text('Load Trending', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                      itemCount: tracks.length,
+                      itemBuilder: (context, index) {
+                        final song = tracks[index];
+                        final isCurrent = player.currentSong?.id == song.id;
+                        return _buildTrackRow(context, player, song, isCurrent, contextQueue: tracks);
+                      },
+                    ),
+        ),
+      ],
+    );
+  }
+
+  void _showImportUrlDialog(BuildContext context, PlayerProvider player) {
+    final ctrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: EmberColors.obsidianBase,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+              left: 20,
+              right: 20,
+              top: 16,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(color: EmberColors.outlineVariant, borderRadius: BorderRadius.circular(2)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Row(
+                  children: [
+                    FaIcon(FontAwesomeIcons.link, size: 16, color: EmberColors.primaryAmber),
+                    SizedBox(width: 10),
+                    Text('Import from Spotify or YouTube', style: TextStyle(color: EmberColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Paste any Spotify playlist, album, or track URL, or YouTube video/playlist link.',
+                  style: TextStyle(color: EmberColors.textSecondary, fontSize: 12),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  style: const TextStyle(color: EmberColors.textPrimary, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'https://open.spotify.com/playlist/... or YouTube link',
+                    hintStyle: const TextStyle(color: EmberColors.textMuted, fontSize: 12),
+                    filled: true,
+                    fillColor: EmberColors.surfaceContainerLow,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancel', style: TextStyle(color: EmberColors.textMuted)),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: EmberColors.primaryAmber,
+                        foregroundColor: EmberColors.obsidianBase,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () async {
+                        final text = ctrl.text.trim();
+                        if (text.isNotEmpty) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              backgroundColor: EmberColors.surfaceContainerHigh,
+                              content: Text('Importing media...', style: TextStyle(color: EmberColors.primaryAmber)),
+                            ),
+                          );
+                          final msg = await player.importMediaUrl(text);
+                          if (context.mounted && msg != null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                backgroundColor: EmberColors.surfaceContainerHigh,
+                                content: Text(msg, style: const TextStyle(color: EmberColors.primaryAmberHi)),
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      child: const Text('Import & Play', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   // Generic Song List (Favorites, History, Search)
   Widget _buildSongList(BuildContext context, PlayerProvider player, List<Song> songs, {String? emptyMsg, bool isSearch = false}) {
     if (songs.isEmpty) {
@@ -1040,8 +1373,10 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
   }
 
   Widget _buildTrackRow(BuildContext context, PlayerProvider player, Song song, bool isCurrent, {bool isQueue = false, List<Song>? contextQueue}) {
+    final artSize = isQueue ? 38.0 : 44.0;
+
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 3),
+      margin: EdgeInsets.symmetric(vertical: isQueue ? 2 : 3),
       decoration: BoxDecoration(
         color: isCurrent
             ? EmberColors.primaryAmber.withValues(alpha: 0.12)
@@ -1052,7 +1387,9 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
         ),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        dense: true,
+        visualDensity: isQueue ? const VisualDensity(horizontal: -1, vertical: -2) : VisualDensity.compact,
+        contentPadding: EdgeInsets.symmetric(horizontal: isQueue ? 10 : 12, vertical: isQueue ? 0 : 2),
         leading: Stack(
           alignment: Alignment.center,
           children: [
@@ -1061,17 +1398,17 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
               child: song.artworkUrl.isNotEmpty
                   ? CachedNetworkImage(
                       imageUrl: song.artworkUrl,
-                      width: 44,
-                      height: 44,
+                      width: artSize,
+                      height: artSize,
                       fit: BoxFit.cover,
-                      errorWidget: (_, _, _) => const FaIcon(FontAwesomeIcons.music, size: 16, color: EmberColors.primaryAmber),
+                      errorWidget: (_, _, _) => FaIcon(FontAwesomeIcons.music, size: artSize * 0.4, color: EmberColors.primaryAmber),
                     )
-                  : const FaIcon(FontAwesomeIcons.music, size: 16, color: EmberColors.primaryAmber),
+                  : FaIcon(FontAwesomeIcons.music, size: artSize * 0.4, color: EmberColors.primaryAmber),
             ),
             if (isCurrent)
               Container(
-                width: 44,
-                height: 44,
+                width: artSize,
+                height: artSize,
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.45),
                   borderRadius: BorderRadius.circular(8),
@@ -1079,7 +1416,7 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
                 child: Center(
                   child: SpectrumBars(
                     isPlaying: player.isPlaying,
-                    height: 16,
+                    height: 14,
                     barCount: 4,
                   ),
                 ),
@@ -1093,32 +1430,52 @@ class _QueueDiscoveryScreenState extends State<QueueDiscoveryScreen> {
           style: TextStyle(
             color: isCurrent ? EmberColors.primaryAmber : EmberColors.textPrimary,
             fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
-            fontSize: 14,
+            fontSize: isQueue ? 13.5 : 14,
           ),
         ),
-        subtitle: Text(
-          song.artist,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: EmberColors.textMuted, fontSize: 12),
+        subtitle: Row(
+          children: [
+            if (song.isSpotify) ...[
+              const FaIcon(FontAwesomeIcons.spotify, size: 10, color: Color(0xFF1DB954)),
+              const SizedBox(width: 4),
+            ] else if (song.isYouTube) ...[
+              const FaIcon(FontAwesomeIcons.youtube, size: 10, color: Color(0xFFFF0000)),
+              const SizedBox(width: 4),
+            ],
+            Expanded(
+              child: Text(
+                song.artist,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: EmberColors.textMuted, fontSize: 11.5),
+              ),
+            ),
+          ],
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-              padding: const EdgeInsets.all(4),
-              icon: FaIcon(
-                player.isFavorite(song.id) ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
-                size: 15,
-                color: player.isFavorite(song.id) ? EmberColors.primaryAmber : EmberColors.textMuted,
+            if (isQueue) ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4),
+                child: FaIcon(FontAwesomeIcons.bars, size: 12, color: EmberColors.textMuted),
               ),
-              onPressed: () => player.toggleFavorite(song),
-            ),
+            ] else ...[
+              IconButton(
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                padding: const EdgeInsets.all(4),
+                icon: FaIcon(
+                  player.isFavorite(song.id) ? FontAwesomeIcons.solidHeart : FontAwesomeIcons.heart,
+                  size: 14,
+                  color: player.isFavorite(song.id) ? EmberColors.primaryAmber : EmberColors.textMuted,
+                ),
+                onPressed: () => player.toggleFavorite(song),
+              ),
+            ],
             IconButton(
-              constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               padding: const EdgeInsets.all(4),
-              icon: const FaIcon(FontAwesomeIcons.ellipsis, size: 15, color: EmberColors.textMuted),
+              icon: const FaIcon(FontAwesomeIcons.ellipsis, size: 14, color: EmberColors.textMuted),
               onPressed: () => TrackOptionsSheet.show(context, song),
             ),
           ],

@@ -112,29 +112,29 @@ Ember employs an intelligent multi-tier streaming pipeline that ensures no song 
 
 ```mermaid
 flowchart TD
-    A["Song Selected (Search / Playlist / Queue)"] --> B{"Is Track Direct URL?"}
+    A["Song Selected (Spotify Chart / YouTube / Queue)"] --> B{"Is Direct Audio URL?"}
     B -- "Yes" --> C["Direct ExoPlayer Stream"]
-    B -- "No (YouTube URL / Track ID)" --> D["CatalogService.resolvePlayableStream()"]
+    B -- "No (Spotify Track / Search Query)" --> D["StreamResolverService.resolveDirectPlayableUrl()"]
     
     D --> E["Sanitize Title & Remove Noise Tags\n(e.g., [Official Video], HD, - Topic)"]
     
-    E --> F["Tier 1: JioSaavn CDN 320 kbps Engine\n(Direct decrypted MP4 stream)"]
-    F -- "Found (<200ms)" --> G["Lossless 320 kbps Playback"]
+    E --> F["Tier 1: Spotube-Style Scored YouTube Music Ladder\n(Hardware-decoded Opus/AAC stream)"]
+    F -- "Found (<300ms)" --> G["Lossless/Audiophile Playback"]
     
-    F -- "Fail / 404" --> H["Tier 2: Global iTunes Catalogue\n(Hardware-accelerated AAC stream)"]
+    F -- "Fail / Restricted" --> H["Tier 2: Global iTunes Catalogue\n(Instant 256 kbps AAC stream)"]
     H -- "Found" --> G
     
-    H -- "Fail / 404" --> I["Tier 3: YouTube InnerTube Extractor\n(Direct MP4 Audio-Only stream)"]
+    H -- "Fail" --> I["Tier 3: YouTube Explode Adaptive Extraction\n(Pure Audio Stream)"]
     I -- "Found" --> G
     
-    I -- "Fail" --> J["Tier 4: Offline Cached Audio Fallback"]
+    I -- "Fail" --> J["Tier 4: Offline Device Cached Storage"]
     J --> G
 ```
 
-1. **JioSaavn CDN (Tier 1)**: Resolves tracks to direct 320 kbps `.mp4` audio streams with hardware acceleration.
+1. **Spotube-Style YouTube Music Ladder (Tier 1)**: Resolves Spotify metadata to high-bitrate YouTube Music audio streams scored by artist match, title match, and duration parity.
 2. **Global iTunes Catalog (Tier 2)**: Instant fallback to high-fidelity AAC audio streams.
-3. **YouTube InnerTube Extractor (Tier 3)**: Resolves raw YouTube videos to hardware-compatible MP4 audio streams with browser user-agent headers.
-4. **Offline Cache (Tier 4)**: Seamlessly plays tracks stored in local device memory when offline.
+3. **YouTube Explode Extractor (Tier 3)**: Resolves raw streams to hardware-compatible MP4/AAC/Opus audio streams.
+4. **Offline Cache & Storage (Tier 4)**: Seamlessly plays tracks stored locally on device memory when offline.
 
 ---
 
@@ -264,9 +264,12 @@ ember_mobile/
 │   │   └── track_options_sheet.dart → 3-dots sheet (Queue, Playlist, Lyrics, Cut Song)
 │   ├── services/
 │   │   ├── audio_handler.dart     → AudioService & just_audio ExoPlayer background engine
-│   │   ├── catalog_service.dart   → 320 kbps JioSaavn + iTunes + InnerTube resolver
+│   │   ├── catalog_service.dart   → Spotify charts + iTunes + InnerTube resolver
+│   │   ├── download_service.dart  → High-speed YouTube audio (MP3/M4A) & video (MP4) downloader
 │   │   ├── lyrics_service.dart    → Real-time synchronized LRC lyrics parser
+│   │   ├── spotify_service.dart   → Spotify web scraper for charts, playlists & tracks
 │   │   ├── storage_service.dart   → SQLite & SharedPreferences persistence
+│   │   ├── stream_resolver_service.dart → Spotube candidate scoring ladder
 │   │   └── youtube_importer_service.dart → YouTube playlist, mix, and search scraper
 │   ├── theme/
 │   │   └── ember_theme.dart       → Obsidian dark theme, gold fire & amber palette

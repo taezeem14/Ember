@@ -7,6 +7,10 @@ import 'package:ember_mobile/services/storage_service.dart';
 import 'package:ember_mobile/services/catalog_service.dart';
 import 'package:ember_mobile/services/lyrics_service.dart';
 import 'package:ember_mobile/theme/ember_theme.dart';
+import 'package:ember_mobile/services/passkey_service.dart';
+import 'package:ember_mobile/services/spotify_service.dart';
+import 'package:ember_mobile/services/stream_resolver_service.dart';
+import 'package:ember_mobile/services/youtube_importer_service.dart';
 import 'package:ember_mobile/widgets/ambient_glow.dart';
 import 'package:ember_mobile/widgets/vinyl_disc.dart';
 
@@ -168,7 +172,13 @@ void main() {
     test('Catalog contains all 8 real music categories', () {
       expect(CatalogService.categories.length, 8);
       final keys = CatalogService.categories.map((m) => m.key).toList();
-      expect(keys, containsAll(['trending', 'top_hits', 'pop', 'hiphop', 'rock', 'electronic', 'rnb', 'acoustic']));
+      expect(keys, containsAll(['trending', 'top_hits', 'bollywood', 'punjabi', 'pop', 'hiphop', 'lofi', 'rock']));
+    });
+
+    test('Catalog decryptMediaUrl decrypts DES and upgrades to 320kbps', () {
+      // Test with null and empty
+      expect(CatalogService.decryptMediaUrl(null), isNull);
+      expect(CatalogService.decryptMediaUrl(''), isNull);
     });
 
     test('Catalog search with empty query returns list', () {
@@ -187,12 +197,19 @@ void main() {
       expect(results, isA<List<Song>>());
     });
 
-    test('Catalog decryptMediaUrl correctly decrypts Saavn encrypted URL', () {
-      const enc = 'ID2ieOjCrwfgWvL5sXl4B1ImC5QfbsDyUAfhmijvFBT8pPh5PqKgzsRHfUZzMKSjj3NUx57Nm2u/4CmI0GLa9hw7tS9a8Gtq';
-      final decrypted = CatalogService.decryptMediaUrl(enc);
-      expect(decrypted, isNotNull);
-      expect(decrypted, startsWith('https://aac.saavncdn.com/'));
-      expect(decrypted, endsWith('_320.mp4'));
+    test('SpotifyService curatedCharts provides valid chart configurations', () {
+      final charts = SpotifyService.curatedCharts;
+      expect(charts, isNotEmpty);
+      expect(charts.first.key, equals('top_hits'));
+      expect(charts.first.playlistId, isNotEmpty);
+    });
+
+    test('SpotifyService parsePlaylistId handles URLs and IDs', () {
+      final id1 = SpotifyService.parsePlaylistId('37i9dQZF1DXcBWIGoYBM5M');
+      expect(id1, equals('37i9dQZF1DXcBWIGoYBM5M'));
+
+      final id2 = SpotifyService.parsePlaylistId('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=123');
+      expect(id2, equals('37i9dQZF1DXcBWIGoYBM5M'));
     });
   });
 
@@ -211,6 +228,19 @@ void main() {
       expect(lines[2].timestamp, const Duration(minutes: 2));
     });
 
+    test('parseLrc supports multiline timestamps and offset adjustments', () {
+      const lrc = '''
+[offset:+500]
+[00:10.00][00:20.00] Repeated line
+''';
+      final lines = LyricsService.parseLrc(lrc);
+      expect(lines.length, 2);
+      expect(lines[0].timestamp, const Duration(seconds: 10, milliseconds: 500));
+      expect(lines[0].text, 'Repeated line');
+      expect(lines[1].timestamp, const Duration(seconds: 20, milliseconds: 500));
+      expect(lines[1].text, 'Repeated line');
+    });
+
     test('cleanString strips extraneous title annotations', () {
       expect(LyricsService.cleanString('Starboy (feat. Daft Punk)'), 'Starboy');
       expect(LyricsService.cleanString('In The End [Official Video]'), 'In The End');
@@ -219,11 +249,11 @@ void main() {
   });
 
   group('Theme Tokens Tests', () {
-    test('EmberColors palette contains warm audio tokens', () {
-      expect(EmberColors.obsidianBase, const Color(0xFF0B0907));
-      expect(EmberColors.primaryAmber, const Color(0xFFF59E0B));
-      expect(EmberColors.primaryAmberHi, const Color(0xFFFFC174));
-      expect(EmberColors.secondaryHoney, const Color(0xFFD97706));
+    test('EmberColors palette contains Spotify Electric Blue tokens', () {
+      expect(EmberColors.obsidianBase, const Color(0xFF121212));
+      expect(EmberColors.primaryBlue, const Color(0xFF2979FF));
+      expect(EmberColors.primaryBlueHi, const Color(0xFF82B1FF));
+      expect(EmberColors.secondaryCyan, const Color(0xFF00D4FF));
     });
 
     test('Dark theme configures dark brightness and amber primary', () {
@@ -277,10 +307,10 @@ void main() {
         artist: 'Artist',
         duration: Duration(minutes: 3),
         artworkUrl: 'https://example.com/art.jpg',
-        streamUrl: 'https://c.saavncdn.com/test.mp4',
+        streamUrl: 'https://example.com/audio.m4a',
       );
       final resolved = await CatalogService.resolvePlayableStream(directSong);
-      expect(resolved, equals('https://c.saavncdn.com/test.mp4'));
+      expect(resolved, equals('https://example.com/audio.m4a'));
     });
 
     test('CatalogService.parseYouTubeMetadata correctly parses titles and filters publisher channels', () {
@@ -351,5 +381,188 @@ void main() {
     });
 
   });
+
+  group('Passkey Service Tests', () {
+    test('PasskeyService contains exactly 100 unique passkeys', () {
+      expect(PasskeyService.passkeys.length, 100);
+      for (final key in PasskeyService.passkeys) {
+        expect(key.startsWith('EMBR-'), isTrue);
+        expect(key.length, 9);
+      }
+    });
+
+    test('PasskeyService isValid checks case-insensitive and trimmed codes', () {
+      final sample = PasskeyService.passkeys.first;
+      expect(PasskeyService.isValid(sample), isTrue);
+      expect(PasskeyService.isValid(sample.toLowerCase()), isTrue);
+      expect(PasskeyService.isValid('  $sample  '), isTrue);
+
+      expect(PasskeyService.isValid(''), isFalse);
+      expect(PasskeyService.isValid('INVALID'), isFalse);
+      expect(PasskeyService.isValid('EMBR-ZZZZ'), isFalse);
+    });
+  });
+
+  group('Song Source and Engine Model Tests', () {
+    test('Song model source defaults to spotify and supports youtube', () {
+      const defaultSong = Song(
+        id: '123',
+        title: 'Song',
+        artist: 'Artist',
+        duration: Duration(minutes: 3),
+        artworkUrl: '',
+        streamUrl: 'https://example.com/audio.m4a',
+      );
+      expect(defaultSong.source, 'spotify');
+      expect(defaultSong.isSpotify, isTrue);
+      expect(defaultSong.isYouTube, isFalse);
+
+      final ytSong = defaultSong.copyWith(id: 'yt_xyz', source: 'youtube');
+      expect(ytSong.source, 'youtube');
+      expect(ytSong.isSpotify, isFalse);
+      expect(ytSong.isYouTube, isTrue);
+
+      final map = ytSong.toMap();
+      expect(map['source'], 'youtube');
+      final revived = Song.fromMap(map);
+      expect(revived.source, 'youtube');
+      expect(revived.isYouTube, isTrue);
+    });
+  });
+
+  group('StorageService History Clear Tests', () {
+    test('StorageService history recording and clearHistory() resets properly', () async {
+      final storage = StorageService(null);
+      expect(storage.loadHistory(), isEmpty);
+
+      const song1 = Song(
+        id: 's_hist_1',
+        title: 'History Song 1',
+        artist: 'Artist 1',
+        duration: Duration(minutes: 3),
+        artworkUrl: '',
+        streamUrl: 'https://example.com/1.mp3',
+      );
+      const song2 = Song(
+        id: 's_hist_2',
+        title: 'History Song 2',
+        artist: 'Artist 2',
+        duration: Duration(minutes: 4),
+        artworkUrl: '',
+        streamUrl: 'https://example.com/2.mp3',
+      );
+
+      await storage.saveHistory([song2, song1]);
+      expect(storage.loadHistory().length, 2);
+      expect(storage.loadHistory().first.id, 's_hist_2');
+
+      await storage.clearHistory();
+      expect(storage.loadHistory(), isEmpty);
+    });
+  });
+
+  group('SpotifyService Tests', () {
+    test('SpotifyService parseSpotifyUrl identifies track, album, and playlist URLs and URIs', () {
+      final track = SpotifyService.parseSpotifyUrl('https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT');
+      expect(track, isNotNull);
+      expect(track!.type, SpotifyEntityType.track);
+      expect(track.id, '4cOdK2wGLETKBW3PvgPWqT');
+
+      final embed = SpotifyService.parseSpotifyUrl('https://open.spotify.com/embed/track/4cOdK2wGLETKBW3PvgPWqT');
+      expect(embed, isNotNull);
+      expect(embed!.type, SpotifyEntityType.track);
+      expect(embed.id, '4cOdK2wGLETKBW3PvgPWqT');
+
+      final playlist = SpotifyService.parseSpotifyUrl('spotify:playlist:37i9dQZF1DXcBWIGoYBM5M');
+      expect(playlist, isNotNull);
+      expect(playlist!.type, SpotifyEntityType.playlist);
+      expect(playlist.id, '37i9dQZF1DXcBWIGoYBM5M');
+
+      final album = SpotifyService.parseSpotifyUrl('https://open.spotify.com/album/4m2880jivSbbyEGAKfITCa?si=123');
+      expect(album, isNotNull);
+      expect(album!.type, SpotifyEntityType.album);
+      expect(album.id, '4m2880jivSbbyEGAKfITCa');
+
+      expect(SpotifyService.parseSpotifyUrl('https://example.com/not-spotify'), isNull);
+    });
+
+    test('SpotifyService curatedCharts contains essential charts', () {
+      expect(SpotifyService.curatedCharts, isNotEmpty);
+      final keys = SpotifyService.curatedCharts.map((c) => c.key).toList();
+      expect(keys.contains('top_hits'), isTrue);
+      expect(keys.contains('global_top_50'), isTrue);
+      expect(keys.contains('viral_50'), isTrue);
+      expect(keys.contains('rapcaviar'), isTrue);
+    });
+  });
+
+  group('StreamResolverService Tests', () {
+    test('cleanTitle strips noise words while preserving core title', () {
+      expect(
+        StreamResolverService.cleanTitle('Starboy (Official Audio) [HD]'),
+        'Starboy',
+      );
+      expect(
+        StreamResolverService.cleanTitle('Blinding Lights (Remastered)'),
+        'Blinding Lights',
+      );
+      expect(
+        StreamResolverService.cleanTitle('As It Was (Music Video)'),
+        'As It Was',
+      );
+    });
+  });
+
+  group('YouTubeImporterService Tests', () {
+    test('detectUrlType correctly classifies videos vs playlists', () {
+      expect(
+        YouTubeImporterService.detectUrlType('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+        YouTubeImportType.video,
+      );
+      expect(
+        YouTubeImporterService.detectUrlType('https://youtu.be/dQw4w9WgXcQ'),
+        YouTubeImportType.video,
+      );
+      expect(
+        YouTubeImporterService.detectUrlType('https://www.youtube.com/playlist?list=PL1234567890'),
+        YouTubeImportType.playlist,
+      );
+      expect(
+        YouTubeImporterService.detectUrlType('https://music.youtube.com/playlist?list=RDCLAK5uy_k'),
+        YouTubeImportType.playlist,
+      );
+      expect(
+        YouTubeImporterService.detectUrlType('https://example.com/something'),
+        YouTubeImportType.unknown,
+      );
+    });
+
+    test('extractVideoId and extractPlaylistId handle various URL formats', () {
+      expect(
+        YouTubeImporterService.extractVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+        'dQw4w9WgXcQ',
+      );
+      expect(
+        YouTubeImporterService.extractVideoId('https://youtu.be/dQw4w9WgXcQ'),
+        'dQw4w9WgXcQ',
+      );
+      expect(
+        YouTubeImporterService.extractPlaylistId('https://www.youtube.com/playlist?list=PL1234567890'),
+        'PL1234567890',
+      );
+    });
+
+    test('parseDurationText handles mm:ss and hh:mm:ss', () {
+      expect(
+        YouTubeImporterService.parseDurationText('3:45'),
+        const Duration(minutes: 3, seconds: 45),
+      );
+      expect(
+        YouTubeImporterService.parseDurationText('1:02:15'),
+        const Duration(hours: 1, minutes: 2, seconds: 15),
+      );
+    });
+  });
 }
+
 

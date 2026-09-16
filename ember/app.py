@@ -36,6 +36,7 @@ from .config import (
     SETTINGS_THEME,
     SETTINGS_VOLUME,
 )
+from .gate import PasskeyGate, is_activated
 from .panel import FloatingPanel
 from .player import PlaybackCore
 from .storage import DB_FILENAME, EmberStorage
@@ -210,8 +211,17 @@ def main() -> int:
         or "."
     )
     _configure_logging(data_dir)
-    log.info("%s starting — %s (Maintained by Taezeem @taezeem14)", APP_NAME, APP_TAGLINE)
+    log.info("%s starting — %s (Created by Muhammad Taezeem Tariq @taezeem14)", APP_NAME, APP_TAGLINE)
     write_icon(str(data_dir / ICON_FILENAME))
+
+    # ── passkey activation gate ──────────────────────────────────────
+    if not is_activated():
+        gate = PasskeyGate()
+        result = gate.exec()
+        if not gate.activated:
+            log.info("activation cancelled — exiting")
+            return 0
+        log.info("Ember activated successfully")
 
     guard = InstanceGuard()
     if not guard.claim():

@@ -15,9 +15,12 @@ from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtWidgets import QLabel
 
 
-def clock(ms: int) -> str:
+def clock(ms: Any) -> str:
     """Milliseconds to a human clock string. Drops the hour field when unused."""
-    total = max(0, int(ms or 0)) // 1000
+    try:
+        total = max(0, int(ms or 0)) // 1000
+    except (ValueError, TypeError):
+        return "0:00"
     hours, rest = divmod(total, 3600)
     minutes, seconds = divmod(rest, 60)
     if hours:

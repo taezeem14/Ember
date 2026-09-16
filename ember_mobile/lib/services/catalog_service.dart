@@ -1,20 +1,21 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:dart_des/dart_des.dart';
+import 'package:flutter/widgets.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:http/http.dart' as http;
 import '../models/song.dart';
-import 'youtube_importer_service.dart';
+import 'stream_resolver_service.dart';
 
 class MusicCategory {
   final String key;
-  final String emoji;
+  final FaIconData icon;
   final String title;
   final String subtitle;
   final String searchQuery;
 
   const MusicCategory({
     required this.key,
-    required this.emoji,
+    required this.icon,
     required this.title,
     required this.subtitle,
     required this.searchQuery,
@@ -25,63 +26,93 @@ class CatalogService {
   static const List<MusicCategory> categories = [
     MusicCategory(
       key: 'trending',
-      emoji: '🚀',
+      icon: FontAwesomeIcons.fire,
       title: 'Trending Now',
       subtitle: 'Top charts & viral hits',
-      searchQuery: 'Trending Songs Hits',
+      searchQuery: 'Trending Hindi Punjabi English',
     ),
     MusicCategory(
       key: 'top_hits',
-      emoji: '🎧',
+      icon: FontAwesomeIcons.headphones,
       title: 'Global Top 50',
       subtitle: 'The hottest tracks worldwide',
-      searchQuery: 'Top Global Hits 2026',
+      searchQuery: 'Top 50 Global Hits',
+    ),
+    MusicCategory(
+      key: 'bollywood',
+      icon: FontAwesomeIcons.music,
+      title: 'Bollywood Hits',
+      subtitle: 'Top Hindi blockbuster songs',
+      searchQuery: 'Bollywood Top Hits',
+    ),
+    MusicCategory(
+      key: 'punjabi',
+      icon: FontAwesomeIcons.drum,
+      title: 'Punjabi Bangers',
+      subtitle: 'Bhangra, urban & high energy',
+      searchQuery: 'Punjabi Top Hits',
     ),
     MusicCategory(
       key: 'pop',
-      emoji: '🎹',
+      icon: FontAwesomeIcons.compactDisc,
       title: 'Pop & Dance',
       subtitle: 'Upbeat melodies & anthems',
-      searchQuery: 'Pop Dance Chart Hits',
+      searchQuery: 'Pop Dance English Hits',
     ),
     MusicCategory(
       key: 'hiphop',
-      emoji: '🎤',
+      icon: FontAwesomeIcons.microphoneLines,
       title: 'Hip-Hop & Rap',
       subtitle: 'Beats, bars & urban hits',
-      searchQuery: 'Hip Hop Rap Top Tracks',
+      searchQuery: 'Hip Hop Rap Hits',
+    ),
+    MusicCategory(
+      key: 'lofi',
+      icon: FontAwesomeIcons.headphones,
+      title: 'Lo-Fi Chill',
+      subtitle: 'Atmospheric study & relax beats',
+      searchQuery: 'Lo-Fi Chill Beats',
     ),
     MusicCategory(
       key: 'rock',
-      emoji: '🎸',
+      icon: FontAwesomeIcons.guitar,
       title: 'Rock & Alternative',
       subtitle: 'Anthems, guitars & indie rock',
-      searchQuery: 'Rock Classics Alternative',
-    ),
-    MusicCategory(
-      key: 'electronic',
-      emoji: '⚡',
-      title: 'Electronic & EDM',
-      subtitle: 'Club energy & festival sound',
-      searchQuery: 'EDM Electronic Dance Festival',
-    ),
-    MusicCategory(
-      key: 'rnb',
-      emoji: '✨',
-      title: 'R&B & Soul',
-      subtitle: 'Smooth grooves & late night rhythms',
-      searchQuery: 'RnB Soul Hits Smooth',
-    ),
-    MusicCategory(
-      key: 'acoustic',
-      emoji: '🌿',
-      title: 'Acoustic & Indie',
-      subtitle: 'Organic instruments & vocals',
-      searchQuery: 'Indie Acoustic Singer Songwriter',
+      searchQuery: 'Rock Classics Anthems',
     ),
   ];
 
   static final Map<String, List<Song>> _categoryCache = {};
+
+  static final List<int> _desKey = utf8.encode('38346591');
+
+  /// Decrypt JioSaavn encrypted media URLs using DES in ECB mode, upgraded to 320kbps
+  static String? decryptMediaUrl(String? encryptedMediaUrl) {
+    if (encryptedMediaUrl == null || encryptedMediaUrl.trim().isEmpty) return null;
+    try {
+      final des = DES(key: _desKey, mode: DESMode.ECB, paddingType: DESPaddingType.PKCS7);
+      final encryptedBytes = base64.decode(encryptedMediaUrl.trim());
+      final decryptedBytes = des.decrypt(encryptedBytes);
+      final rawUrl = utf8.decode(decryptedBytes).trim();
+      // Upgrade from standard 96kbps to 320kbps high-definition full song stream
+      return rawUrl.replaceAll('_96.mp4', '_320.mp4');
+    } catch (e) {
+      debugPrint('Error decrypting JioSaavn media URL: $e');
+      return null;
+    }
+  }
+
+  static String _unescape(dynamic text) {
+    if (text == null) return '';
+    return text
+        .toString()
+        .replaceAll('&quot;', '"')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&#039;', "'")
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .trim();
+  }
 
   static List<Song> getAllTracks() {
     final list = <Song>[];
@@ -107,47 +138,19 @@ class CatalogService {
     }).toList();
   }
 
-  static final List<int> _desKey = utf8.encode('38346591');
-
-  /// Decrypt JioSaavn encrypted media URLs using DES in ECB mode
-  static String? decryptMediaUrl(String? encryptedMediaUrl) {
-    if (encryptedMediaUrl == null || encryptedMediaUrl.trim().isEmpty) return null;
-    try {
-      final des = DES(key: _desKey, mode: DESMode.ECB, paddingType: DESPaddingType.PKCS7);
-      final encryptedBytes = base64.decode(encryptedMediaUrl.trim());
-      final decryptedBytes = des.decrypt(encryptedBytes);
-      final rawUrl = utf8.decode(decryptedBytes).trim();
-      // Upgrade from default 96kbps to 320kbps high-definition full song stream
-      return rawUrl.replaceAll('_96.mp4', '_320.mp4');
-    } catch (e) {
-      debugPrint('Error decrypting media URL: $e');
-      return null;
-    }
-  }
-
-  static String _unescape(dynamic text) {
-    if (text == null) return '';
-    return text
-        .toString()
-        .replaceAll('&quot;', '"')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&#039;', "'")
-        .replaceAll('&lt;', '<')
-        .replaceAll('&gt;', '>')
-        .trim();
-  }
-
-  /// Real-world online music catalog search with full-length 320kbps song streaming
+  /// Real-world online music catalog search with 320kbps JioSaavn CDN streams
   static Future<List<Song>> searchOnline(String query, {int limit = 25}) async {
     final q = query.trim();
     if (q.isEmpty) return getAllTracks();
 
-    // 1. Primary: Search full-length song catalogue with 320kbps streams
+    // 1. Primary: JioSaavn 320kbps Direct CDN Engine
     try {
       final saavnUrl = Uri.parse(
         'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&includeMetaTags=1&p=1&n=$limit&q=${Uri.encodeComponent(q)}',
       );
-      final resp = await http.get(saavnUrl, headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(seconds: 5));
+      final resp = await http.get(saavnUrl, headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      }).timeout(const Duration(seconds: 6));
 
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -164,7 +167,7 @@ class CatalogService {
             final streamUrl = decryptMediaUrl(encrypted);
             if (streamUrl == null || streamUrl.isEmpty) continue;
 
-            final trackId = item['id']?.toString() ?? UniqueKey().toString();
+            final trackId = item['id']?.toString() ?? 'saavn_${UniqueKey().toString()}';
             final durationSec = int.tryParse('${item['duration']}') ?? 180;
             final rawArt = item['image'] as String? ?? '';
             final artworkUrl = rawArt.replaceAll('150x150', '500x500').replaceAll('50x50', '500x500');
@@ -177,6 +180,7 @@ class CatalogService {
                 duration: Duration(seconds: durationSec),
                 artworkUrl: artworkUrl,
                 streamUrl: streamUrl,
+                source: 'saavn',
               ),
             );
           }
@@ -187,10 +191,10 @@ class CatalogService {
         }
       }
     } catch (e) {
-      debugPrint('Primary full song search error: $e');
+      debugPrint('JioSaavn primary search error: $e');
     }
 
-    // 2. Secondary Fallback: Global iTunes catalogue (proven reliable audio streaming)
+    // 2. Secondary Fallback: Global iTunes catalogue
     try {
       final itunesUrl = Uri.parse(
         'https://itunes.apple.com/search?term=${Uri.encodeComponent(q)}&entity=song&limit=$limit',
@@ -208,7 +212,7 @@ class CatalogService {
             final previewUrl = item['previewUrl'] as String?;
             if (trackName == null || previewUrl == null || previewUrl.isEmpty) continue;
 
-            final trackId = item['trackId']?.toString() ?? UniqueKey().toString();
+            final trackId = 'itunes_${item['trackId']?.toString() ?? UniqueKey().toString()}';
             final durationMs = (item['trackTimeMillis'] as num?)?.toInt() ?? 180000;
             final rawArt = item['artworkUrl100'] as String? ?? '';
             final artworkUrl = rawArt.replaceAll('100x100bb', '600x600bb');
@@ -221,6 +225,7 @@ class CatalogService {
                 duration: Duration(milliseconds: durationMs),
                 artworkUrl: artworkUrl,
                 streamUrl: previewUrl,
+                source: 'itunes',
               ),
             );
           }
@@ -234,27 +239,26 @@ class CatalogService {
       debugPrint('iTunes search fallback error: $e');
     }
 
-    // 3. Tertiary: YouTube music search via InnerTube
-    try {
-      final ytSongs = await YouTubeImporterService.searchYouTube(q, limit: limit);
-      if (ytSongs.isNotEmpty) {
-        return ytSongs;
-      }
-    } catch (e) {
-      debugPrint('YouTube search fallback error: $e');
-    }
-
-    // 4. Offline fallback
+    // 3. Offline cache fallback
     return search(query);
-
   }
 
-  /// Fetch today's real trending full-length songs (320kbps)
+  /// Fetch trending 320kbps songs from JioSaavn
   static Future<List<Song>> fetchTrendingTracks({int limit = 20}) async {
+    if (_categoryCache.containsKey('trending') && _categoryCache['trending']!.isNotEmpty) {
+      return _categoryCache['trending']!;
+    }
+
+    final tracks = await searchOnline('Trending Top Songs 2026', limit: limit);
+    if (tracks.isNotEmpty) {
+      _categoryCache['trending'] = tracks;
+      return tracks;
+    }
+
     return fetchCategoryTracks('trending', limit: limit);
   }
 
-  /// Fetch full-length 320kbps songs for a specific music category
+  /// Fetch songs for a specific music category
   static Future<List<Song>> fetchCategoryTracks(String categoryKey, {int limit = 20}) async {
     if (_categoryCache.containsKey(categoryKey) && _categoryCache[categoryKey]!.isNotEmpty) {
       return _categoryCache[categoryKey]!;
@@ -274,84 +278,29 @@ class CatalogService {
   /// Backward-compatible alias
   static Future<List<Song>> fetchMoodTracks(String key) => fetchCategoryTracks(key);
 
-  /// Dynamic recommendation system: fetch tracks related to current song
+  /// Dynamic recommendation system: fetch tracks related to current song via JioSaavn
   static Future<List<Song>> fetchRecommendations(Song song, {int limit = 10}) async {
-    final parsed = <Song>[];
-
-    // 1. If native catalog track, query JioSaavn recommendation API
-    if (!song.id.startsWith('yt_') && !song.id.startsWith('lofi_') && !song.id.startsWith('rain_')) {
-      try {
-        final recoUrl = Uri.parse(
-          'https://www.jiosaavn.com/api.php?__call=reco.getreco&api_version=4&_format=json&_marker=0&ctx=android&songid=${song.id}',
-        );
-        final resp = await http.get(recoUrl, headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(seconds: 4));
-
-        if (resp.statusCode == 200) {
-          final list = jsonDecode(resp.body) as List? ?? [];
-          for (final item in list.take(limit)) {
-            if (item is Map<String, dynamic>) {
-              final title = _unescape(item['song'] ?? item['title']);
-              final artist = _unescape(item['singers'] ?? item['primary_artists'] ?? item['music']);
-              final encrypted = item['encrypted_media_url'] as String?;
-              if (title.isEmpty || encrypted == null || encrypted.isEmpty) continue;
-
-              final streamUrl = decryptMediaUrl(encrypted);
-              if (streamUrl == null || streamUrl.isEmpty) continue;
-
-              final trackId = item['id']?.toString() ?? UniqueKey().toString();
-              if (trackId == song.id) continue;
-
-              final durationSec = int.tryParse('${item['duration']}') ?? 180;
-              final rawArt = item['image'] as String? ?? '';
-              final artworkUrl = rawArt.replaceAll('150x150', '500x500').replaceAll('50x50', '500x500');
-
-              parsed.add(
-                Song(
-                  id: trackId,
-                  title: title,
-                  artist: artist.isNotEmpty ? artist : 'Unknown Artist',
-                  duration: Duration(seconds: durationSec),
-                  artworkUrl: artworkUrl,
-                  streamUrl: streamUrl,
-                ),
-              );
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint('Recommendation fetch error: $e');
-      }
-    }
-
-    if (parsed.isNotEmpty) {
-      return parsed;
-    }
-
-    // 2. Fallback: query online search for the artist or genre
     try {
       final query = song.artist != 'Unknown Artist' && song.artist.isNotEmpty
-          ? song.artist
+          ? '${song.artist} songs'
           : song.title;
-      final online = await searchOnline(query, limit: limit);
-      final filtered = online.where((s) => s.id != song.id).toList();
+      final online = await searchOnline(query, limit: limit + 2);
+      final filtered = online.where((s) => s.id != song.id).take(limit).toList();
       if (filtered.isNotEmpty) {
         return filtered;
       }
     } catch (_) {}
 
-    // 3. Ambient fallback: Return tracks from same mood or popular tracks
     return getAllTracks().where((s) => s.id != song.id).take(limit).toList();
   }
 
-  /// Smart YouTube metadata cleaner: extracts true song title, artist, and clean search query
+  /// Smart metadata cleaner: extracts clean song title, artist, and search query
   static ({String cleanTitle, String cleanArtist, String searchQuery}) parseYouTubeMetadata(String rawTitle, String rawAuthor) {
-    // 1. Remove bracketed / parenthetical video noise
     var t = rawTitle
         .replaceAll(RegExp(r'\((?:official|music|video|audio|lyrics|hd|4k|visualizer|remastered|lyric|prod\.|feat\.|ft\.).*?\)', caseSensitive: false), '')
         .replaceAll(RegExp(r'\[(?:official|music|video|audio|lyrics|hd|4k|visualizer|remastered|lyric|prod\.|feat\.|ft\.).*?\]', caseSensitive: false), '')
         .trim();
 
-    // Remove movie/album trailers or pipes like "| Brahmāstra", "| Official Video", etc.
     if (t.contains('|')) {
       t = t.split('|').first.trim();
     }
@@ -359,7 +308,6 @@ class CatalogService {
     String extractedArtist = '';
     String extractedTitle = t;
 
-    // 2. Check for "Artist - Title" or "Title - Artist" format
     if (t.contains(' - ') || t.contains(' – ') || t.contains(' — ')) {
       final delimiter = t.contains(' - ') ? ' - ' : (t.contains(' – ') ? ' – ' : ' — ');
       final parts = t.split(delimiter);
@@ -369,24 +317,14 @@ class CatalogService {
       }
     }
 
-    // 3. Detect if rawAuthor is a publisher / record company / channel
     final lowerAuthor = rawAuthor.toLowerCase();
     final isPublisher = lowerAuthor.contains('vevo') ||
         lowerAuthor.contains('topic') ||
         lowerAuthor.contains('records') ||
         lowerAuthor.contains('record') ||
         lowerAuthor.contains('music') ||
-        lowerAuthor.contains('series') ||
-        lowerAuthor.contains('studio') ||
-        lowerAuthor.contains('studios') ||
         lowerAuthor.contains('company') ||
         lowerAuthor.contains('label') ||
-        lowerAuthor.contains('nation') ||
-        lowerAuthor.contains('clouds') ||
-        lowerAuthor.contains('chill') ||
-        lowerAuthor.contains('sound') ||
-        lowerAuthor.contains('entertainment') ||
-        lowerAuthor.contains('media') ||
         rawAuthor == 'Unknown Artist';
 
     String finalArtist = extractedArtist;
@@ -394,11 +332,9 @@ class CatalogService {
       finalArtist = rawAuthor.trim();
     }
 
-    // Further clean extracted title
     extractedTitle = extractedTitle
         .replaceAll(RegExp(r'\(.*?\)|\[.*?\]', caseSensitive: false), '')
         .replaceAll(RegExp(r'\b(?:official|video|audio|lyrics|hd|4k|full song|lyric video)\b', caseSensitive: false), '')
-        .replaceAll(RegExp(r'\b(?:feat\.|ft\.)\s+[A-Za-z0-9\s,&]+', caseSensitive: false), '')
         .trim();
 
     if (extractedTitle.isEmpty) extractedTitle = t;
@@ -425,13 +361,11 @@ class CatalogService {
 
     if (normTargetTitle.isEmpty || normCandTitle.isEmpty) return false;
 
-    // Direct containment or equality
     bool titleMatches = normTargetTitle == normCandTitle ||
         normCandTitle.contains(normTargetTitle) ||
         normTargetTitle.contains(normCandTitle);
 
     if (!titleMatches) {
-      // Check significant word token overlap
       final targetTokens = targetTitle.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toSet();
       final candTokens = candidateTitle.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toSet();
       if (targetTokens.isNotEmpty && candTokens.isNotEmpty) {
@@ -444,7 +378,6 @@ class CatalogService {
 
     if (!titleMatches) return false;
 
-    // Artist verification: if target artist is identified, ensure candidate artist has common tokens
     final normTargetArtist = normalize(targetArtist);
     final normCandArtist = normalize(candidateArtist);
 
@@ -460,101 +393,9 @@ class CatalogService {
     return true;
   }
 
-  /// Resolves an ordered list of viable playable streams for a song
+  /// Resolves viable playable stream candidates using StreamResolverService
   static Future<List<String>> resolvePlayableStreamCandidates(Song song) async {
-    final candidates = <String>[];
-    final s = song.streamUrl;
-    final isYt = s.contains('youtube.com') || s.contains('youtu.be') || song.id.startsWith('yt_');
-
-    // If already a direct non-YouTube stream or local file, return immediately
-    if (!isYt && s.isNotEmpty && !s.contains('youtube.com/watch')) {
-      return [s];
-    }
-
-    // 1. PRIMARY: Direct authentic YouTube audio stream
-    if (isYt) {
-      try {
-        final ytStream = await YouTubeImporterService.resolvePlayableUrl(song);
-        if (ytStream != null && ytStream.isNotEmpty) {
-          candidates.add(ytStream);
-        }
-      } catch (e) {
-        debugPrint('Direct YouTube stream extraction error for "${song.title}": $e');
-      }
-    }
-
-    // 2. SECONDARY: High-Fidelity 320kbps JioSaavn verified match
-    final meta = parseYouTubeMetadata(song.title, song.artist);
-    final queries = [meta.searchQuery, meta.cleanTitle];
-
-    for (final query in queries) {
-      if (candidates.length >= 2) break;
-      try {
-        final saavnUrl = Uri.parse(
-          'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&cc=in&includeMetaTags=1&p=1&n=5&q=${Uri.encodeComponent(query)}',
-        );
-        final resp = await http.get(saavnUrl, headers: {'User-Agent': 'Mozilla/5.0'}).timeout(const Duration(seconds: 4));
-        if (resp.statusCode == 200) {
-          final data = jsonDecode(resp.body) as Map<String, dynamic>;
-          final list = data['results'] as List? ?? [];
-          for (final item in list) {
-            final resTitle = _unescape(item['title'] ?? item['song']);
-            final resArtist = _unescape(item['more_info']?['artistMap']?['primary_artists']?[0]?['name'] ?? item['primary_artists']);
-            if (verifyMatch(
-              targetTitle: meta.cleanTitle,
-              targetArtist: meta.cleanArtist,
-              candidateTitle: resTitle,
-              candidateArtist: resArtist,
-            )) {
-              final enc = item['encrypted_media_url'] as String?;
-              if (enc != null && enc.isNotEmpty) {
-                final stream = decryptMediaUrl(enc);
-                if (stream != null && stream.isNotEmpty && !candidates.contains(stream)) {
-                  candidates.add(stream);
-                  break;
-                }
-              }
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint('Saavn candidate resolution error: $e');
-      }
-    }
-
-    // 3. TERTIARY: Global iTunes verified match
-    if (candidates.length < 2) {
-      try {
-        final itunesUrl = Uri.parse(
-          'https://itunes.apple.com/search?term=${Uri.encodeComponent(meta.searchQuery)}&entity=song&limit=5',
-        );
-        final resp = await http.get(itunesUrl).timeout(const Duration(seconds: 4));
-        if (resp.statusCode == 200) {
-          final data = jsonDecode(resp.body) as Map<String, dynamic>;
-          final list = data['results'] as List? ?? [];
-          for (final item in list) {
-            final resTitle = item['trackName'] as String? ?? '';
-            final resArtist = item['artistName'] as String? ?? '';
-            if (verifyMatch(
-              targetTitle: meta.cleanTitle,
-              targetArtist: meta.cleanArtist,
-              candidateTitle: resTitle,
-              candidateArtist: resArtist,
-            )) {
-              final prev = item['previewUrl'] as String?;
-              if (prev != null && prev.isNotEmpty && !candidates.contains(prev)) {
-                candidates.add(prev);
-                break;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint('iTunes candidate resolution error: $e');
-      }
-    }
-
-    return candidates;
+    return StreamResolverService.resolvePlayableStreamCandidates(song);
   }
 
   /// Resolves any song's stream URL into a directly playable media stream
@@ -565,6 +406,4 @@ class CatalogService {
     }
     return null;
   }
-
 }
-

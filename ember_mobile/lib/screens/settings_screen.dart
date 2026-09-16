@@ -191,7 +191,7 @@ class SettingsContent extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               Text(
-                'Ember was designed and architected exclusively by Muhammad Taezeem Tariq (@taezeem14). Built with a deep obsession for pristine audio quality, zero ads, real-time lyrics, and seamless YouTube & global music streaming.',
+                'Ember was designed and architected exclusively by Muhammad Taezeem Tariq (@taezeem14). Built with a deep obsession for pristine audio quality, zero ads, real-time lyrics, and seamless JioSaavn 320kbps audiophile CDN streaming.',
                 style: TextStyle(
                   color: EmberColors.textSecondary.withValues(alpha: 0.9),
                   fontSize: 12.5,
@@ -309,11 +309,11 @@ class SettingsContent extends StatelessWidget {
           onTap: null,
         ),
         const _SettingsTile(
-          icon: FontAwesomeIcons.youtube,
-          iconColor: Colors.redAccent,
-          title: 'YouTube Extractor Engine',
-          subtitle: 'NewPipe InnerTube Client (youtubei/v1)',
-          trailing: Text('Active', style: TextStyle(color: EmberColors.primaryAmberHi, fontSize: 12)),
+          icon: FontAwesomeIcons.music,
+          iconColor: EmberColors.primaryAmber,
+          title: 'Spotify & YouTube Music Engine',
+          subtitle: 'Spotube-grade hardware-accelerated Opus/AAC dual-engine',
+          trailing: Text('Lossless/HD', style: TextStyle(color: EmberColors.primaryAmberHi, fontSize: 12, fontWeight: FontWeight.bold)),
           onTap: null,
         ),
         const _SettingsTile(

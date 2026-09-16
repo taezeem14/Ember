@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'providers/player_provider.dart';
-import 'screens/queue_discovery_screen.dart';
+import 'screens/spotify_shell_screen.dart';
 import 'services/audio_handler.dart';
 import 'services/storage_service.dart';
 import 'theme/ember_theme.dart';
+
+import 'services/passkey_service.dart';
+import 'screens/passkey_gate_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,10 +45,18 @@ void main() async {
     storageService = StorageService(null);
   }
 
+  bool isActivated = false;
+  try {
+    isActivated = await PasskeyService.isActivated();
+  } catch (e) {
+    debugPrint('Passkey check error: $e');
+  }
+
   runApp(
     EmberMobileApp(
       audioHandler: audioHandler,
       storageService: storageService,
+      initialActivated: isActivated,
     ),
   );
 }
@@ -53,11 +64,13 @@ void main() async {
 class EmberMobileApp extends StatelessWidget {
   final EmberAudioHandler audioHandler;
   final StorageService storageService;
+  final bool initialActivated;
 
   const EmberMobileApp({
     super.key,
     required this.audioHandler,
     required this.storageService,
+    this.initialActivated = false,
   });
 
   @override
@@ -72,7 +85,9 @@ class EmberMobileApp extends StatelessWidget {
         title: 'Ember',
         debugShowCheckedModeBanner: false,
         theme: EmberTheme.darkTheme,
-        home: const QueueDiscoveryScreen(),
+        home: initialActivated
+            ? const SpotifyShellScreen()
+            : const PasskeyGateScreen(),
       ),
     );
   }

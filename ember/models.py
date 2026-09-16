@@ -46,11 +46,11 @@ class Song:
         if not data:
             data = {}
         return cls(
-            video_id=str(data.get("video_id", "")),
-            title=str(data.get("title", "untitled")),
-            artist=str(data.get("artist", "unknown artist")),
-            duration=str(data.get("duration", "")),
-            artwork_url=str(data.get("artwork_url", "")),
+            video_id=str(data.get("video_id") or ""),
+            title=str(data.get("title") or "untitled"),
+            artist=str(data.get("artist") or "unknown artist"),
+            duration=str(data.get("duration") or ""),
+            artwork_url=str(data.get("artwork_url") or ""),
             stream_url=data.get("stream_url"),
         )
 

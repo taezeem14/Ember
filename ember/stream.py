@@ -8,6 +8,7 @@ yt-dlp. Nothing is ever written to disk — we only read the resolved URL.
 
 from __future__ import annotations
 
+import copy
 import html
 import logging
 import re
@@ -107,7 +108,7 @@ class StreamResolver:
         last_exc: Optional[Exception] = None
         for attempt in range(1, max_attempts + 1):
             try:
-                with yt_dlp.YoutubeDL(self.options) as ydl:
+                with yt_dlp.YoutubeDL(copy.deepcopy(self.options)) as ydl:
                     data = ydl.extract_info(target, download=False)
                     if isinstance(data, dict):
                         return data
@@ -138,6 +139,8 @@ class StreamResolver:
         """Direct audio URL for a track id, or None when nothing playable exists."""
         if not video_id:
             return None
+        if video_id.startswith("http://") or video_id.startswith("https://"):
+            return video_id
         target = WATCH_URL.format(video_id)
         try:
             info = self._probe(target)

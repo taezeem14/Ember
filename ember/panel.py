@@ -1852,7 +1852,8 @@ class FloatingPanel(QWidget):
         self.collapse() if self.expanded else self.expand()
 
     def clamp_to_screen(self) -> None:
-        screen = self.screen()
+        from PyQt6.QtGui import QGuiApplication
+        screen = QGuiApplication.screenAt(self.geometry().center()) or self.screen()
         if screen is None:
             return
         bounds = screen.availableGeometry()
@@ -1945,8 +1946,11 @@ class FloatingPanel(QWidget):
         self._art_pending.add(song.video_id)
         job = ArtJob(song.video_id, song.artwork_url)
         job.signals.arrived.connect(self._on_art)
-        job.signals.failed.connect(lambda sid, _msg: self._art_pending.discard(sid))
+        job.signals.failed.connect(self._on_art_failed)
         self.core.pool.start(job)
+
+    def _on_art_failed(self, sid: str, _msg: str) -> None:
+        self._art_pending.discard(sid)
 
     def _on_art(self, song_id: str, payload: bytes) -> None:
         self._art_pending.discard(song_id)
@@ -2305,10 +2309,19 @@ class FloatingPanel(QWidget):
         self._set_status("endless on" if enabled else "endless off")
 
     def closeEvent(self, event) -> None:  # noqa: N802
-        if self._sleep_timer.isActive():
+        if hasattr(self, "_sleep_timer") and self._sleep_timer.isActive():
             self._sleep_timer.stop()
+        if hasattr(self, "_debounce_timer") and self._debounce_timer.isActive():
+            self._debounce_timer.stop()
+        if hasattr(self, "_notice_timer") and self._notice_timer.isActive():
+            self._notice_timer.stop()
         self.core.cancel_fade()
         self.toast.close()
+        if hasattr(self, "storage") and self.storage is not None:
+            try:
+                self.storage.close()
+            except Exception as store_err:
+                log.debug("error closing storage on exit: %s", store_err)
         self.closed.emit()
         super().closeEvent(event)
 

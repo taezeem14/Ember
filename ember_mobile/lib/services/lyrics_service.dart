@@ -45,24 +45,62 @@ class LyricsService {
 
   static List<LyricLine> parseLrc(String lrcText) {
     final lines = <LyricLine>[];
-    final regExp = RegExp(r'^\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\](.*)$');
+    Duration globalOffset = Duration.zero;
+
+    final tagRegex = RegExp(r'\[([a-zA-Z]+|\d+):([^\]]+)\]');
+    final timeRegex = RegExp(r'^(\d{1,3}):(\d{2})(?:[\.:](\d{1,3}))?$');
 
     for (final rawLine in lrcText.split('\n')) {
-      final line = rawLine.trim();
-      final match = regExp.firstMatch(line);
-      if (match != null) {
-        final minutes = int.tryParse(match.group(1) ?? '0') ?? 0;
-        final seconds = int.tryParse(match.group(2) ?? '0') ?? 0;
-        final fractionStr = match.group(3) ?? '0';
-        final millis = fractionStr.length == 2
-            ? (int.tryParse(fractionStr) ?? 0) * 10
-            : (int.tryParse(fractionStr) ?? 0);
+      final trimmed = rawLine.trim();
+      if (trimmed.isEmpty) continue;
 
-        final text = match.group(4)?.trim() ?? '';
+      final tagMatches = tagRegex.allMatches(trimmed).toList();
+      if (tagMatches.isEmpty) continue;
+
+      final lastTag = tagMatches.last;
+      final lineText = trimmed.substring(lastTag.end).trim();
+      final lineTimestamps = <Duration>[];
+
+      for (final match in tagMatches) {
+        final key = match.group(1)!;
+        final value = match.group(2)!;
+
+        if (key.toLowerCase() == 'offset') {
+          final offsetMs = int.tryParse(value) ?? 0;
+          globalOffset = Duration(milliseconds: offsetMs);
+          continue;
+        }
+
+        if (int.tryParse(key) == null) {
+          // Metadata tag like [ar:Artist], skip
+          continue;
+        }
+
+        final timeMatch = timeRegex.firstMatch('$key:$value');
+        if (timeMatch != null) {
+          final mins = int.tryParse(timeMatch.group(1) ?? '0') ?? 0;
+          final secs = int.tryParse(timeMatch.group(2) ?? '0') ?? 0;
+          final frac = timeMatch.group(3) ?? '0';
+
+          int millis = 0;
+          if (frac.length == 1) {
+            millis = (int.tryParse(frac) ?? 0) * 100;
+          } else if (frac.length == 2) {
+            millis = (int.tryParse(frac) ?? 0) * 10;
+          } else {
+            millis = int.tryParse(frac.substring(0, 3)) ?? 0;
+          }
+
+          lineTimestamps.add(Duration(minutes: mins, seconds: secs, milliseconds: millis));
+        }
+      }
+
+      for (final ts in lineTimestamps) {
+        final adjustedTs = ts + globalOffset;
         lines.add(
           LyricLine(
-            timestamp: Duration(minutes: minutes, seconds: seconds, milliseconds: millis),
-            text: text,
+            timestamp: adjustedTs.isNegative ? Duration.zero : adjustedTs,
+            text: lineText.isEmpty ? '...' : lineText,
           ),
         );
       }

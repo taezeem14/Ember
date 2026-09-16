@@ -12,6 +12,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   just_audio: ^0.9.44
   audio_service: ^0.18.18
+  audio_session: ^0.1.25
   audio_video_progress_bar: ^2.0.1
   cached_network_image: ^3.4.1
   google_fonts: ^6.3.3

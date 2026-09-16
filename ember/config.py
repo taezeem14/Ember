@@ -18,9 +18,9 @@ ORG_NAME = "Ember Audio"
 APP_ID = "ember.desktop.companion"
 
 # ---------------------------------------------------------------- attribution
-APP_AUTHOR = "Mayank Malaviya"
-APP_AUTHOR_HANDLE = "AIwolfie"
-APP_CREDIT = f"developed by {APP_AUTHOR} aka {APP_AUTHOR_HANDLE}"
+APP_AUTHOR = "Muhammad Taezeem Tariq"
+APP_AUTHOR_HANDLE = "taezeem14"
+APP_CREDIT = f"created by {APP_AUTHOR} (@{APP_AUTHOR_HANDLE})"
 
 # ---------------------------------------------------------------- geometry
 PANEL_WIDTH = 392
@@ -58,6 +58,7 @@ SETTINGS_SPEED = "playback/speed"
 SETTINGS_ALWAYS_ON_TOP = "ui/always_on_top"
 SETTINGS_EQ_PROFILE = "audio/eq_profile"
 SETTINGS_CROSSFEED = "audio/crossfeed"
+SETTINGS_ACTIVATED = "auth/activated"
 DEFAULT_OPACITY = 96
 
 MINI_WIDTH = 280

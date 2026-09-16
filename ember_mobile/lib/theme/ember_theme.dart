@@ -4,29 +4,49 @@ import 'package:google_fonts/google_fonts.dart';
 class EmberColors {
   EmberColors._();
 
-  // Surface & Foundations
-  static const Color obsidianBase = Color(0xFF0B0907);
-  static const Color surface = Color(0xFF151310);
-  static const Color surfaceContainerLow = Color(0xFF1E1B18);
-  static const Color surfaceContainer = Color(0xFF221F1C);
-  static const Color surfaceContainerHigh = Color(0xFF2C2927);
-  static const Color surfaceContainerHighest = Color(0xFF373431);
+  // Surface & Foundations (Pitch Black & Spotify Surfaces)
+  static const Color obsidianBase = Color(0xFF121212);
+  static const Color surface = Color(0xFF121212);
+  static const Color surfaceContainerLowest = Color(0xFF000000);
+  static const Color surfaceContainerLow = Color(0xFF181818);
+  static const Color surfaceContainer = Color(0xFF242424);
+  static const Color surfaceContainerHigh = Color(0xFF282828);
+  static const Color surfaceContainerHighest = Color(0xFF333333);
 
-  // Warm Amber & Gold Accents
-  static const Color primaryAmber = Color(0xFFF59E0B);
-  static const Color primaryAmberHi = Color(0xFFFFC174);
-  static const Color secondaryHoney = Color(0xFFD97706);
-  static const Color tertiaryGold = Color(0xFFFBBF24);
+  // Spotify Electric Blue & Luminous Cyan Accents
+  static const Color primaryBlue = Color(0xFF2979FF);
+  static const Color primaryBlueHi = Color(0xFF82B1FF);
+  static const Color secondaryCyan = Color(0xFF00D4FF);
+  static const Color secondaryAzure = Color(0xFF1E88E5);
+  static const Color tertiaryBlue = Color(0xFF448AFF);
 
-  // Text & Content Hierarchy
-  static const Color textPrimary = Color(0xFFFFFBEB);
-  static const Color textSecondary = Color(0xFFD5C7B5);
-  static const Color textMuted = Color(0xFF7C6E5F);
+  // Convenience aliases for Electric Blue Spotify theme
+  static const Color electricBlue = primaryBlue;
+  static const Color electricBlueHi = primaryBlueHi;
+  static const Color charcoalCard = surfaceContainerLow;
+  static const Color surfaceDark = surfaceContainer;
+  static const Color glassBorder = outlineVariant;
+  static const Color spotifyGreen = Color(0xFF1DB954);
+  static const Color youtubeRed = Color(0xFFFF0000);
+
+  // Backward-compatible aliases for existing widgets
+  static const Color primaryAmber = primaryBlue;
+  static const Color primaryAmberHi = primaryBlueHi;
+  static const Color secondaryHoney = secondaryCyan;
+  static const Color secondaryOrange = secondaryAzure;
+  static const Color tertiaryGold = tertiaryBlue;
+
+  // Text & Content Hierarchy (Spotify Standard Text Contrast)
+  static const Color textPrimary = Color(0xFFFFFFFF);
+  static const Color textSecondary = Color(0xFFB3B3B3);
+  static const Color textMuted = Color(0xFF727272);
 
   // System & Borders
-  static const Color outline = Color(0xFF534434);
-  static const Color outlineVariant = Color(0xFF3E3326);
+  static const Color outline = Color(0xFF3E3E3E);
+  static const Color outlineVariant = Color(0xFF282828);
+  static const Color borderSubtle = Color(0xFF282828);
   static const Color error = Color(0xFFE05252);
+  static const Color spotifyBlue = Color(0xFF2979FF);
 }
 
 class EmberTheme {

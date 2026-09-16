@@ -125,6 +125,13 @@ class StorageService {
     }
   }
 
+  Future<void> clearHistory() async {
+    _memHistory.clear();
+    if (_prefs != null) {
+      await _prefs.remove(_histKey);
+    }
+  }
+
   List<Playlist> loadPlaylists() {
     if (_prefs == null) {
       return List.unmodifiable(_memPlaylists);

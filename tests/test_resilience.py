@@ -85,3 +85,4 @@ def test_art_job_signals() -> None:
     job = ArtJob("vid_test", "http://example.com/fake.jpg")
     assert hasattr(job.signals, "arrived")
     assert hasattr(job.signals, "failed")
+

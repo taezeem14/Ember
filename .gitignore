@@ -22,4 +22,7 @@ Desktop.ini
 *.log
 *.db
 .pytest_cache/
-*.apk
+*.apk
+noor_mobile/
+noor_app_icon.png
+

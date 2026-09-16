@@ -64,3 +64,22 @@ def test_song_from_dict_none_and_empty() -> None:
     assert song_empty.video_id == ""
     assert song_empty.title == "untitled"
     assert song_empty.byline == "unknown artist"
+
+
+def test_song_from_dict_explicit_none_values() -> None:
+    data = {
+        "video_id": None,
+        "title": None,
+        "artist": None,
+        "duration": None,
+        "artwork_url": None,
+    }
+    song = Song.from_dict(data)
+    assert song.video_id == ""
+    assert song.title == "untitled"
+    assert song.artist == "unknown artist"
+    assert song.duration == ""
+    assert song.artwork_url == ""
+    assert song.video_id != "None"
+    assert song.title != "None"
+

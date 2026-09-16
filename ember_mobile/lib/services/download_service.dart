@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import '../models/song.dart';
-import 'catalog_service.dart';
 import 'storage_service.dart';
+import 'youtube_importer_service.dart';
 
 class DownloadProgress {
   final String songId;
@@ -70,7 +70,31 @@ class DownloadService {
     return await getApplicationDocumentsDirectory();
   }
 
-  /// Download audio as MP3/M4A directly to device storage
+  /// Resolve any song (Spotify or YouTube) to a valid YouTube Video ID
+  static Future<String?> _resolveVideoId(YoutubeExplode yt, Song song) async {
+    if (song.id.startsWith('yt_')) {
+      return song.id.substring(3);
+    }
+
+    final fromUrl = YouTubeImporterService.extractVideoId(song.streamUrl);
+    if (fromUrl != null && fromUrl.isNotEmpty) {
+      return fromUrl;
+    }
+
+    try {
+      final cleanTitle = song.title.replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '').trim();
+      final query = '${cleanTitle.isNotEmpty ? cleanTitle : song.title} ${song.artist}'.trim();
+      final searchResults = await yt.search.search(query).timeout(const Duration(seconds: 5));
+      if (searchResults.isNotEmpty) {
+        return searchResults.first.id.value;
+      }
+    } catch (e) {
+      debugPrint('Error searching video ID for download: $e');
+    }
+    return null;
+  }
+
+  /// Download audio directly to device storage for offline playback
   static Future<String?> downloadAudio(Song song, StorageService storageService) async {
     final songId = song.id;
     if (_activeDownloads[songId]?.isCompleted == false && _activeDownloads[songId]?.isFailed == false) {
@@ -80,82 +104,93 @@ class DownloadService {
     _activeDownloads[songId] = DownloadProgress(songId: songId, progress: 0.0);
     _progressController.add(_activeDownloads[songId]!);
 
-    try {
-      final dir = await _getMediaDirectory(isVideo: false);
-      final safeTitle = _sanitizeFilename('${song.title} - ${song.artist}');
-      final file = File('${dir.path}/$safeTitle.mp3');
+    // 1. Direct JioSaavn CDN audio download (320kbps full song)
+    if (song.streamUrl.contains('saavncdn.com') ||
+        (!song.streamUrl.contains('youtube.com') && !song.streamUrl.contains('youtu.be') && song.streamUrl.startsWith('http'))) {
+      try {
+        final dir = await _getMediaDirectory(isVideo: false);
+        final safeTitle = _sanitizeFilename('${song.title} - ${song.artist}');
+        final file = File('${dir.path}/$safeTitle.mp4');
 
-      bool downloaded = false;
-      // Check if YouTube track
-      if (song.streamUrl.contains('youtube') || song.streamUrl.contains('youtu.be') || song.id.startsWith('yt_')) {
-        final yt = YoutubeExplode();
-        try {
-          final videoId = song.id.startsWith('yt_') ? song.id.substring(3) : song.id;
-          final manifest = await yt.videos.streamsClient.getManifest(videoId).timeout(const Duration(seconds: 5));
-          final audioStreamInfo = manifest.audioOnly.withHighestBitrate();
-          final stream = yt.videos.streamsClient.get(audioStreamInfo);
-
-          final output = file.openWrite();
-          var received = 0;
-          final total = audioStreamInfo.size.totalBytes;
-
-          await for (final chunk in stream) {
-            output.add(chunk);
-            received += chunk.length;
-            final prog = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.5;
-            _activeDownloads[songId] = DownloadProgress(songId: songId, progress: prog);
-            _progressController.add(_activeDownloads[songId]!);
-          }
-          await output.flush();
-          await output.close();
-          downloaded = true;
-        } catch (ytErr) {
-          debugPrint('YouTube direct download error: $ytErr. Attempting candidate fallback...');
-        } finally {
-          yt.close();
-        }
-      }
-
-      if (!downloaded) {
-        // Direct CDN stream or candidate stream fallback
-        String? targetUrl = (!song.streamUrl.contains('youtube.com/watch') && !song.streamUrl.contains('youtu.be/'))
-            ? song.streamUrl
-            : null;
-        if (targetUrl == null) {
-          final candidates = await CatalogService.resolvePlayableStreamCandidates(song);
-          if (candidates.isNotEmpty) {
-            targetUrl = candidates.first;
-          }
-        }
-
-        if (targetUrl == null) {
-          throw Exception('No playable audio stream available for download');
-        }
-
-        final request = http.Request('GET', Uri.parse(targetUrl));
-        if (targetUrl.contains('googlevideo.com')) {
-          request.headers.addAll({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': 'https://www.youtube.com/',
-          });
-        }
-        final response = await http.Client().send(request);
+        final client = http.Client();
+        final req = http.Request('GET', Uri.parse(song.streamUrl));
+        final response = await client.send(req);
         final total = response.contentLength ?? 0;
         var received = 0;
+        final sink = file.openWrite();
 
-        final output = file.openWrite();
-        await response.stream.listen((chunk) {
-          output.add(chunk);
+        await for (final chunk in response.stream) {
+          sink.add(chunk);
           received += chunk.length;
           final prog = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.5;
           _activeDownloads[songId] = DownloadProgress(songId: songId, progress: prog);
           _progressController.add(_activeDownloads[songId]!);
-        }).asFuture();
+        }
 
-        await output.flush();
-        await output.close();
-        downloaded = true;
+        await sink.flush();
+        await sink.close();
+        client.close();
+
+        final downloadedSong = song.copyWith(streamUrl: file.path);
+        final currentDownloads = storageService.loadDownloads();
+        currentDownloads.removeWhere((s) => s.id == song.id);
+        currentDownloads.add(downloadedSong);
+        await storageService.saveDownloads(currentDownloads);
+
+        _activeDownloads[songId] = DownloadProgress(
+          songId: songId,
+          progress: 1.0,
+          isCompleted: true,
+          localFilePath: file.path,
+        );
+        _progressController.add(_activeDownloads[songId]!);
+        return file.path;
+      } catch (e) {
+        debugPrint('Direct JioSaavn CDN audio download error: $e');
       }
+    }
+
+    final yt = YoutubeExplode();
+    try {
+      final videoId = await _resolveVideoId(yt, song);
+      if (videoId == null || videoId.isEmpty) {
+        throw Exception('Could not resolve audio stream for "${song.title}"');
+      }
+
+      final manifest = await yt.videos.streamsClient.getManifest(videoId).timeout(const Duration(seconds: 8));
+
+      // Prefer MP4/M4A AAC container for universal Android hardware playback, fallback to any audio
+      StreamInfo? audioStreamInfo;
+      final mp4Audio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
+      if (mp4Audio.isNotEmpty) {
+        audioStreamInfo = mp4Audio.withHighestBitrate();
+      } else if (manifest.audioOnly.isNotEmpty) {
+        audioStreamInfo = manifest.audioOnly.withHighestBitrate();
+      } else if (manifest.audio.isNotEmpty) {
+        audioStreamInfo = manifest.audio.withHighestBitrate();
+      } else {
+        throw Exception('No audio stream found for "${song.title}"');
+      }
+
+      final dir = await _getMediaDirectory(isVideo: false);
+      final safeTitle = _sanitizeFilename('${song.title} - ${song.artist}');
+      final ext = audioStreamInfo.container.name.toLowerCase() == 'mp4' ? 'm4a' : audioStreamInfo.container.name.toLowerCase();
+      final file = File('${dir.path}/$safeTitle.$ext');
+
+      final stream = yt.videos.streamsClient.get(audioStreamInfo);
+      final output = file.openWrite();
+      var received = 0;
+      final total = audioStreamInfo.size.totalBytes;
+
+      await for (final chunk in stream) {
+        output.add(chunk);
+        received += chunk.length;
+        final prog = total > 0 ? (received / total).clamp(0.0, 1.0) : 0.5;
+        _activeDownloads[songId] = DownloadProgress(songId: songId, progress: prog);
+        _progressController.add(_activeDownloads[songId]!);
+      }
+      await output.flush();
+      await output.close();
 
       // Record in storage as downloaded
       final downloadedSong = song.copyWith(
@@ -175,7 +210,7 @@ class DownloadService {
       _progressController.add(_activeDownloads[songId]!);
       return file.path;
     } catch (e) {
-      debugPrint('Download error: $e');
+      debugPrint('Audio download error: $e');
       _activeDownloads[songId] = DownloadProgress(
         songId: songId,
         progress: 0.0,
@@ -184,10 +219,12 @@ class DownloadService {
       );
       _progressController.add(_activeDownloads[songId]!);
       return null;
+    } finally {
+      yt.close();
     }
   }
 
-  /// Download MP4 Video directly to device Gallery / Movies
+  /// Download MP4 Video directly to device Movies/Ember folder
   static Future<String?> downloadVideo(Song song) async {
     final videoIdKey = 'video_${song.id}';
     _activeDownloads[videoIdKey] = DownloadProgress(songId: videoIdKey, progress: 0.0, isVideo: true);
@@ -195,34 +232,30 @@ class DownloadService {
 
     final yt = YoutubeExplode();
     try {
-      Video? targetVideo;
-
-      if (song.id.startsWith('yt_')) {
-        targetVideo = await yt.videos.get(song.id.substring(3));
-      } else {
-        // Search YouTube for official video match
-        final searchResults = await yt.search.search('${song.title} ${song.artist} official video');
-        if (searchResults.isNotEmpty) {
-          targetVideo = searchResults.first;
-        } else {
-          final fallbackSearch = await yt.search.search('${song.title} ${song.artist}');
-          if (fallbackSearch.isNotEmpty) {
-            targetVideo = fallbackSearch.first;
-          }
-        }
+      final videoId = await _resolveVideoId(yt, song);
+      if (videoId == null || videoId.isEmpty) {
+        throw Exception('No video found for "${song.title}"');
       }
 
-      if (targetVideo == null) {
-        throw Exception('No video found for ${song.title}');
-      }
+      final manifest = await yt.videos.streamsClient.getManifest(videoId).timeout(const Duration(seconds: 8));
 
-      final manifest = await yt.videos.streamsClient.getManifest(targetVideo.id);
-      // Get muxed stream (contains both high-def video AND audio in MP4 container)
+      // 1. Prioritize muxed stream (contains BOTH high-definition video and audio in MP4 container)
+      StreamInfo? streamInfo;
       final muxedStreams = manifest.muxed.sortByVideoQuality();
-      final streamInfo = muxedStreams.isNotEmpty ? muxedStreams.first : manifest.muxed.withHighestBitrate();
+      if (muxedStreams.isNotEmpty) {
+        streamInfo = muxedStreams.first;
+      } else if (manifest.videoOnly.isNotEmpty) {
+        streamInfo = manifest.videoOnly.withHighestBitrate();
+      } else if (manifest.streams.isNotEmpty) {
+        streamInfo = manifest.streams.first;
+      }
+
+      if (streamInfo == null) {
+        throw Exception('No playable video stream found for "${song.title}"');
+      }
 
       final dir = await _getMediaDirectory(isVideo: true);
-      final safeTitle = _sanitizeFilename('${targetVideo.title} - ${targetVideo.author}');
+      final safeTitle = _sanitizeFilename('${song.title} - ${song.artist}');
       final file = File('${dir.path}/$safeTitle.mp4');
 
       final stream = yt.videos.streamsClient.get(streamInfo);

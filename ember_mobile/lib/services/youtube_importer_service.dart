@@ -152,7 +152,7 @@ class YouTubeImporterService {
 
     final yt = YoutubeExplode();
     try {
-      final manifest = await yt.videos.streamsClient.getManifest(cleanId).timeout(const Duration(milliseconds: 5000));
+      final manifest = await yt.videos.streamsClient.getManifest(cleanId).timeout(const Duration(milliseconds: 9000));
 
       // 1. Android hardware decoder preference: MP4 / AAC audio stream (compatible with all devices like Redmi Note 5 Pro)
       final mp4Audio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
@@ -415,6 +415,10 @@ class YouTubeImporterService {
 
     return const YouTubeImportResult(type: YouTubeImportType.unknown, error: 'Unrecognized YouTube URL');
   }
+
+  /// Alias for searchYouTube
+  static Future<List<Song>> searchInnerTube(String query, {int limit = 25}) =>
+      searchYouTube(query, limit: limit);
 
   /// NewPipe-style InnerTube music search returning full-length tracks with high-resolution thumbnails
   static Future<List<Song>> searchYouTube(String query, {int limit = 25}) async {

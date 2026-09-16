@@ -10,6 +10,7 @@ class Song {
   final String streamUrl;
   final String? lyrics;
   final bool isFavorite;
+  final String source;
 
   const Song({
     required this.id,
@@ -20,7 +21,11 @@ class Song {
     required this.streamUrl,
     this.lyrics,
     this.isFavorite = false,
+    this.source = 'spotify',
   });
+
+  bool get isSpotify => source == 'spotify' || id.startsWith('sp_') || streamUrl.startsWith('spotify:');
+  bool get isYouTube => source == 'youtube' || id.startsWith('yt_') || streamUrl.contains('youtu');
 
   Song copyWith({
     String? id,
@@ -31,6 +36,7 @@ class Song {
     String? streamUrl,
     String? lyrics,
     bool? isFavorite,
+    String? source,
   }) {
     return Song(
       id: id ?? this.id,
@@ -41,6 +47,7 @@ class Song {
       streamUrl: streamUrl ?? this.streamUrl,
       lyrics: lyrics ?? this.lyrics,
       isFavorite: isFavorite ?? this.isFavorite,
+      source: source ?? this.source,
     );
   }
 
@@ -54,6 +61,7 @@ class Song {
       'stream_url': streamUrl,
       'lyrics': lyrics,
       'is_favorite': isFavorite,
+      'source': source,
     };
   }
 
@@ -66,7 +74,8 @@ class Song {
       artworkUrl: map['artwork_url'] as String? ?? '',
       streamUrl: map['stream_url'] as String? ?? '',
       lyrics: map['lyrics'] as String?,
-      isFavorite: (map['is_favorite'] as bool?) ?? false,
+      isFavorite: map['is_favorite'] as bool? ?? false,
+      source: map['source'] as String? ?? 'spotify',
     );
   }
 

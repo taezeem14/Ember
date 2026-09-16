@@ -7,6 +7,7 @@ import '../services/catalog_service.dart';
 import '../services/download_service.dart';
 import '../services/lyrics_service.dart';
 import '../services/storage_service.dart';
+import '../services/spotify_service.dart';
 import '../services/youtube_importer_service.dart';
 
 class PlayerProvider extends ChangeNotifier {
@@ -33,6 +34,17 @@ class PlayerProvider extends ChangeNotifier {
   List<Song> _recommendations = [];
   List<Song> _categoryTracks = [];
   bool _isAutoplayEnabled = true;
+
+  /// Counts consecutive stream resolution failures to break infinite skip loops
+  int _consecutiveStreamFailures = 0;
+  static const int _maxConsecutiveFailures = 3;
+
+  // Spotify & YouTube Library state
+  List<Song> _spotifyTracks = [];
+  bool _isLoadingSpotify = false;
+  String _activeSpotifyChart = 'top_hits';
+  List<Song> _youtubeTracks = [];
+  bool _isLoadingYouTube = false;
 
   // Equalizer state
   String _eqPreset = 'Warm Tape';
@@ -65,6 +77,7 @@ class PlayerProvider extends ChangeNotifier {
   Duration get duration => _duration;
   double get speed => _speed;
   bool get isShuffle => _isShuffle;
+  bool get shuffle => _isShuffle;
   String get repeatMode => _repeatMode;
   String get activeTab => _activeTab;
   String get activeCategory => _activeCategory;
@@ -80,6 +93,12 @@ class PlayerProvider extends ChangeNotifier {
   List<Song> get categoryTracks => _categoryTracks;
   bool get isAutoplayEnabled => _isAutoplayEnabled;
   int get sleepSecondsRemaining => _sleepSecondsRemaining;
+
+  List<Song> get spotifyTracks => _spotifyTracks;
+  bool get isLoadingSpotify => _isLoadingSpotify;
+  String get activeSpotifyChart => _activeSpotifyChart;
+  List<Song> get youtubeTracks => _youtubeTracks;
+  bool get isLoadingYouTube => _isLoadingYouTube;
 
   String get eqPreset => _eqPreset;
   bool get eqEnabled => _eqEnabled;
@@ -170,9 +189,22 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> _handleSongCompleted() async {
+    // Guard against infinite skip loops when consecutive songs fail to load
+    _consecutiveStreamFailures++;
+    if (_consecutiveStreamFailures > _maxConsecutiveFailures) {
+      debugPrint('Stopping auto-advance: $_consecutiveStreamFailures consecutive stream failures');
+      _consecutiveStreamFailures = 0;
+      // Don't stop playback entirely — just halt advancing so the user can manually pick a song
+      return;
+    }
+
     if (_repeatMode == 'one') {
-      await _audioHandler.seek(Duration.zero);
-      await _audioHandler.play();
+      if (_currentIndex >= 0 && _currentIndex < _queue.length) {
+        await playSong(_queue[_currentIndex]);
+      } else {
+        await _audioHandler.seek(Duration.zero);
+        await _audioHandler.play();
+      }
       return;
     }
 
@@ -200,6 +232,9 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> playSong(Song song, {List<Song>? contextQueue}) async {
+    // Reset failure counter — a new user-initiated or successful play attempt breaks any failure loop
+    _consecutiveStreamFailures = 0;
+    
     if (contextQueue != null) {
       _queue = List.from(contextQueue);
       _currentIndex = _queue.indexWhere((s) => s.id == song.id);
@@ -223,14 +258,6 @@ class PlayerProvider extends ChangeNotifier {
     _loadLyrics(song);
     _loadRecommendations(song);
     await _audioHandler.playSong(song);
-
-    // Background prefetch next track stream for zero-latency transition
-    if (_currentIndex + 1 < _queue.length) {
-      final nextSong = _queue[_currentIndex + 1];
-      if (nextSong.id.startsWith('yt_')) {
-        YouTubeImporterService.prefetchPlaylistStreams([nextSong]);
-      }
-    }
   }
 
   Future<void> _loadLyrics(Song song) async {
@@ -295,17 +322,21 @@ class PlayerProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> togglePlayPause() => togglePlay();
+
   /// Completely halt playback, dismiss active song, and return to no song playing state
   Future<void> stopPlayback() async {
     try {
       await _audioHandler.stop();
     } catch (_) {}
-    _currentIndex = -1;
+    _queue.clear();
+    _currentIndex = 0;
     _isPlaying = false;
     _position = Duration.zero;
     _duration = Duration.zero;
     _lyrics = LyricsResult.empty;
     _isLoadingLyrics = false;
+    _consecutiveStreamFailures = 0;
     notifyListeners();
   }
 
@@ -474,6 +505,22 @@ class PlayerProvider extends ChangeNotifier {
       return;
     }
 
+    // Auto-detect pasted Spotify or YouTube URLs for zero-friction importing
+    if (trimmed.startsWith('http://') ||
+        trimmed.startsWith('https://') ||
+        trimmed.startsWith('spotify:') ||
+        trimmed.contains('spotify.com') ||
+        trimmed.contains('youtube.com') ||
+        trimmed.contains('youtu.be')) {
+      _isSearching = true;
+      notifyListeners();
+      importMediaUrl(trimmed).then((msg) {
+        _isSearching = false;
+        notifyListeners();
+      });
+      return;
+    }
+
     // Immediately display local instant results so the UI responds in 0ms
     _searchResults = CatalogService.search(trimmed);
     _isSearching = true;
@@ -519,10 +566,18 @@ class PlayerProvider extends ChangeNotifier {
   void removeTrackAt(int index) {
     if (index < 0 || index >= _queue.length) return;
     _queue.removeAt(index);
-    if (_currentIndex >= _queue.length) {
-      _currentIndex = (_queue.length - 1).clamp(0, _queue.length);
+
+    if (index == _currentIndex) {
+      if (_queue.isEmpty) {
+        stopPlayback();
+      } else {
+        _currentIndex = _currentIndex.clamp(0, _queue.length - 1);
+        playSong(_queue[_currentIndex]);
+      }
     } else if (index < _currentIndex) {
       _currentIndex--;
+    } else if (_currentIndex >= _queue.length) {
+      _currentIndex = (_queue.length - 1).clamp(0, _queue.length);
     }
     notifyListeners();
   }
@@ -603,22 +658,20 @@ class PlayerProvider extends ChangeNotifier {
 
   // YouTube Importer
   Future<String> importYouTubeUrl(String url) async {
-    final res = await YouTubeImporterService.importFromUrl(url);
-    if (res.error != null) {
-      return 'Import failed: ${res.error}';
+    final result = await YouTubeImporterService.importFromUrl(url);
+    if (result.error != null) {
+      return 'Import failed: ${result.error}';
     }
-
-    if (res.type == YouTubeImportType.playlist && res.playlist != null) {
-      await _storageService.savePlaylist(res.playlist!);
-      _playlists = _storageService.loadPlaylists();
-      notifyListeners();
-      return 'Imported & saved "${res.playlist!.title}" (${res.playlist!.songs.length} tracks)';
-    } else if (res.type == YouTubeImportType.video && res.song != null) {
-      addToQueue(res.song!);
-      notifyListeners();
-      return 'Imported "${res.song!.title}" to queue';
+    if (result.type == YouTubeImportType.video && result.song != null) {
+      addToQueue(result.song!);
+      return 'Added "${result.song!.title}" to queue';
+    } else if (result.type == YouTubeImportType.playlist && result.playlist != null) {
+      for (final s in result.playlist!.songs) {
+        addToQueue(s);
+      }
+      return 'Added ${result.playlist!.songs.length} tracks from "${result.playlist!.title}"';
     }
-    return 'Import failed';
+    return 'Could not import track or playlist';
   }
 
   // Offline Downloads
@@ -694,6 +747,100 @@ class PlayerProvider extends ChangeNotifier {
     _history.removeWhere((s) => s.id == song.id);
     _history.insert(0, song);
     _storageService.saveHistory(_history);
+  }
+
+  Future<void> clearHistory() async {
+    _history.clear();
+    await _storageService.clearHistory();
+    notifyListeners();
+  }
+
+  Future<void> loadSpotifyChart(String chartKey) async {
+    _activeSpotifyChart = chartKey;
+    final chart = SpotifyService.curatedCharts.firstWhere(
+      (c) => c.key == chartKey,
+      orElse: () => SpotifyService.curatedCharts.first,
+    );
+
+    _isLoadingSpotify = true;
+    notifyListeners();
+
+    try {
+      final playlist = await SpotifyService.fetchPlaylist(chart.playlistId);
+      if (playlist != null && playlist.songs.isNotEmpty) {
+        _spotifyTracks = playlist.songs;
+      }
+    } catch (e) {
+      debugPrint('Error loading Spotify chart: $e');
+    } finally {
+      _isLoadingSpotify = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadYouTubeTrending() async {
+    if (_youtubeTracks.isNotEmpty) return;
+    _isLoadingYouTube = true;
+    notifyListeners();
+
+    try {
+      final tracks = await YouTubeImporterService.searchInnerTube('Trending Hits 2026', limit: 25);
+      if (tracks.isNotEmpty) {
+        _youtubeTracks = tracks;
+      }
+    } catch (e) {
+      debugPrint('Error loading YouTube trending: $e');
+    } finally {
+      _isLoadingYouTube = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> importMediaUrl(String url) async {
+    final clean = url.trim();
+    if (clean.isEmpty) return null;
+
+    // 1. Spotify URL
+    if (clean.contains('spotify.com') || clean.startsWith('spotify:')) {
+      final res = await SpotifyService.importFromUrl(clean);
+      if (res.playlist != null && res.playlist!.songs.isNotEmpty) {
+        final pl = res.playlist!;
+        _playlists.insert(0, pl);
+        _storageService.savePlaylists(_playlists);
+        _queue = List.from(pl.songs);
+        _currentIndex = 0;
+        await playSong(pl.songs.first);
+        notifyListeners();
+        return 'Imported Spotify playlist "${pl.title}" (${pl.songs.length} tracks)';
+      } else if (res.song != null) {
+        addToQueue(res.song!);
+        await playSong(res.song!);
+        return 'Playing "${res.song!.title}"';
+      }
+      return res.error ?? 'Could not parse Spotify link';
+    }
+
+    // 2. YouTube URL
+    if (clean.contains('youtube.com') || clean.contains('youtu.be')) {
+      final res = await YouTubeImporterService.importFromUrl(clean);
+      if (res.playlist != null && res.playlist!.songs.isNotEmpty) {
+        final pl = res.playlist!;
+        _playlists.insert(0, pl);
+        _storageService.savePlaylists(_playlists);
+        _queue = List.from(pl.songs);
+        _currentIndex = 0;
+        await playSong(pl.songs.first);
+        notifyListeners();
+        return 'Imported YouTube playlist "${pl.title}" (${pl.songs.length} tracks)';
+      } else if (res.song != null) {
+        addToQueue(res.song!);
+        await playSong(res.song!);
+        return 'Playing "${res.song!.title}"';
+      }
+      return res.error ?? 'Could not parse YouTube link';
+    }
+
+    return null;
   }
 
   void startSleepTimer(int minutes) {

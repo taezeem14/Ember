@@ -105,12 +105,12 @@ def _artwork_url(item: Dict[str, Any]) -> str:
 
 
 COZY_MOODS: Dict[str, tuple[str, str]] = {
-    "lofi": ("☕ Lo-Fi Study", "lofi hip hop chill beats study relax"),
-    "rainy": ("🌧️ Rainy Day", "rainy day cozy acoustic jazz piano"),
-    "jazz": ("🎷 Late Night Jazz", "late night jazz bar muted trumpet noir"),
-    "fireside": ("🕯️ Cozy Fireside", "warm acoustic fingerstyle guitar cozy"),
-    "chillhop": ("🌌 Chillhop", "chillhop instrumental sleepy night beats"),
-    "autumn": ("🍂 Autumn Amber", "warm indie folk acoustic golden hour"),
+    "lofi": ("Lo-Fi Study", "lofi hip hop chill beats study relax"),
+    "rainy": ("Rainy Day", "rainy day cozy acoustic jazz piano"),
+    "jazz": ("Late Night Jazz", "late night jazz bar muted trumpet noir"),
+    "fireside": ("Cozy Fireside", "warm acoustic fingerstyle guitar cozy"),
+    "chillhop": ("Chillhop", "chillhop instrumental sleepy night beats"),
+    "autumn": ("Autumn Amber", "warm indie folk acoustic golden hour"),
 }
 
 

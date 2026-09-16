@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
-import 'catalog_service.dart';
+import 'stream_resolver_service.dart';
+import 'youtube_importer_service.dart';
 
 
 Future<AudioHandler> initAudioHandler() async {
@@ -40,12 +42,29 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   AsyncCallback? _onSkipPrevious;
   AsyncCallback? _onCompleted;
 
+  /// Guard to prevent ProcessingState.completed from firing _onCompleted
+  /// multiple times for the same track (fixes the "shifts songs by itself" bug)
+  bool _completionHandled = false;
+
   bool _eqEnabled = true;
   double _bassBoost = 0.35;
   String _currentPreset = 'Warm Tape';
 
   EmberAudioHandler() {
     _player = AudioPlayer(
+      audioLoadConfiguration: const AudioLoadConfiguration(
+        androidLoadControl: AndroidLoadControl(
+          minBufferDuration: Duration(seconds: 4),
+          maxBufferDuration: Duration(seconds: 30),
+          bufferForPlaybackDuration: Duration(milliseconds: 500),
+          bufferForPlaybackAfterRebufferDuration: Duration(milliseconds: 1500),
+          backBufferDuration: Duration(seconds: 5),
+        ),
+        darwinLoadControl: DarwinLoadControl(
+          automaticallyWaitsToMinimizeStalling: true,
+          preferredForwardBufferDuration: Duration(seconds: 10),
+        ),
+      ),
       audioPipeline: AudioPipeline(
         androidAudioEffects: [
           _equalizer,
@@ -54,6 +73,46 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       ),
     );
     _initAudioStreams();
+    _initAudioSession();
+  }
+
+  Future<void> _initAudioSession() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+
+      session.becomingNoisyEventStream.listen((_) {
+        debugPrint('Audio output became noisy (headphones unplugged). Auto-pausing...');
+        pause();
+      });
+
+      session.interruptionEventStream.listen((event) {
+        if (event.begin) {
+          switch (event.type) {
+            case AudioInterruptionType.duck:
+              _player.setVolume(0.35);
+              break;
+            case AudioInterruptionType.pause:
+            case AudioInterruptionType.unknown:
+              pause();
+              break;
+          }
+        } else {
+          switch (event.type) {
+            case AudioInterruptionType.duck:
+              _player.setVolume(1.0);
+              break;
+            case AudioInterruptionType.pause:
+              play();
+              break;
+            case AudioInterruptionType.unknown:
+              break;
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint('AudioSession initialization error: $e');
+    }
   }
 
   AudioPlayer get player => _player;
@@ -105,15 +164,28 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       );
     });
 
-    // Auto-advance when song finishes
+    // Auto-advance when song finishes (guarded to fire only when track actually completed playback)
     _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        _onCompleted?.call();
+      if (state.processingState == ProcessingState.completed && !_completionHandled) {
+        final pos = _player.position;
+        final dur = _player.duration;
+        // Verify playback actually progressed to prevent instant auto-advance loops on failed loads or 0s resets
+        final hasPlayed = pos.inSeconds >= 3;
+        final reachedEnd = dur != null && dur > const Duration(seconds: 5)
+            ? pos >= (dur - const Duration(seconds: 4))
+            : hasPlayed;
+
+        if (hasPlayed && reachedEnd) {
+          _completionHandled = true;
+          _onCompleted?.call();
+        }
       }
     });
   }
 
   Future<void> playSong(Song song) async {
+    // Reset completion guard so this new track can fire completion when it ends
+    _completionHandled = false;
     _currentSong = song;
     mediaItem.add(
       MediaItem(
@@ -146,9 +218,42 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         return;
       }
 
-      // Online stream resolution with resilient candidate fallbacks
-      final candidates = await CatalogService.resolvePlayableStreamCandidates(song);
-      if (candidates.isEmpty && s.isNotEmpty && !s.contains('youtube.com/watch') && !s.contains('youtu.be/')) {
+      // Online cross-engine stream resolution with resilient candidate fallbacks
+      final targetSong = song;
+
+      // For YouTube songs, try direct video ID resolution first (fast path)
+      final isYtSong = song.id.startsWith('yt_') || s.contains('youtube.com/watch') || s.contains('youtu.be/') || song.source == 'youtube';
+      if (isYtSong) {
+        String? videoId;
+        if (song.id.startsWith('yt_')) videoId = song.id.replaceFirst('yt_', '');
+        videoId ??= YouTubeImporterService.extractVideoId(s);
+        if (videoId != null && videoId.isNotEmpty) {
+          try {
+            final directStream = await YouTubeImporterService.getAudioStreamUrl(videoId);
+            if (_currentSong != targetSong) return;
+            if (directStream != null && directStream.isNotEmpty) {
+              try {
+                await _player.setUrl(directStream);
+                if (_currentSong != targetSong) return;
+                await _player.play();
+                debugPrint('Playing YouTube "${song.title}" via direct stream [vid=$videoId]');
+                await _updateAudioEffects();
+                if (_eqEnabled) await applyEqualizerPreset(_currentPreset);
+                return;
+              } catch (e) {
+                debugPrint('YouTube direct stream playback failed for "$videoId": $e');
+              }
+            }
+          } catch (e) {
+            debugPrint('YouTube direct resolution failed for "$videoId": $e');
+          }
+        }
+      }
+
+      // General stream resolver (source-aware: YouTube songs stay on YouTube, JioSaavn songs stay on JioSaavn)
+      final candidates = await StreamResolverService.resolvePlayableStreamCandidates(song);
+      if (_currentSong != targetSong) return; // Superseded by newer track selection
+      if (candidates.isEmpty && s.isNotEmpty && !s.contains('youtube.com/watch') && !s.contains('youtu.be/') && !s.startsWith('spotify:')) {
         candidates.add(s);
       }
 
@@ -156,17 +261,8 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       for (final url in candidates) {
         if (url.isEmpty || url.contains('youtube.com/watch') || url.contains('youtu.be/')) continue;
         try {
-          if (url.contains('googlevideo.com')) {
-            await _player.setUrl(
-              url,
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': 'https://www.youtube.com/',
-              },
-            );
-          } else {
-            await _player.setUrl(url);
-          }
+          await _player.setUrl(url);
+          if (_currentSong != targetSong) return; // Superseded during network connect
           await _player.play();
           started = true;
           debugPrint('Successfully playing "${song.title}" via: ${url.substring(0, url.length > 50 ? 50 : url.length)}...');
@@ -177,8 +273,13 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       }
 
       if (!started) {
-        debugPrint('All stream candidates failed for "${song.title}". Auto-advancing to next track...');
-        _onCompleted?.call();
+        debugPrint('All stream candidates failed for "${song.title}". Halting playback gracefully.');
+        playbackState.add(
+          playbackState.value.copyWith(
+            processingState: AudioProcessingState.idle,
+            playing: false,
+          ),
+        );
         return;
       }
 

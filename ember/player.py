@@ -17,8 +17,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, List, Optional
 
-from PyQt6.QtCore import QObject, QThreadPool, QTimer, QUrl, pyqtSignal
-from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PyQt6.QtCore import QObject, QThreadPool, QTimer, QUrl, Qt, pyqtSignal
+from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer, QMediaDevices
 
 from .catalog import CatalogSource
 from .config import DEFAULT_VOLUME, RADIO_DEPTH, SEEK_MS_BACKSTEP
@@ -114,6 +114,28 @@ class PlaybackCore(QObject):
         self.player.mediaStatusChanged.connect(self._relay_media_status)
         self.player.errorOccurred.connect(self._relay_error)
 
+        try:
+            self._devices: Optional[QMediaDevices] = QMediaDevices(self)
+            self._devices.audioOutputsChanged.connect(self._on_audio_devices_changed)
+            self._last_device_id = self.output.device().id()
+        except Exception as dev_err:
+            log.debug("Could not initialize QMediaDevices: %s", dev_err)
+            self._devices = None
+
+    def _on_audio_devices_changed(self) -> None:
+        """Detect Bluetooth/USB headphone disconnect and auto-pause gracefully."""
+        if not self._devices:
+            return
+        default_dev = self._devices.defaultAudioOutput()
+        current_dev = self.output.device()
+        if current_dev.isNull() or current_dev.id() != getattr(self, "_last_device_id", None):
+            log.info("Audio output device changed or disconnected. Auto-pausing...")
+            if self.is_playing:
+                self.pause()
+                self.notice.emit("headphones disconnected — paused")
+            self.output.setDevice(default_dev)
+            self._last_device_id = default_dev.id()
+
     # ------------------------------------------------------------------ state
     @property
     def current(self) -> Optional[Song]:
@@ -148,15 +170,16 @@ class PlaybackCore(QObject):
         if expand is None:
             expand = self.auto_queue
 
-        slot = self.index_of(song.video_id)
-        if slot < 0:
-            self.queue = [song]
-            self.cursor = 0
-            self.queue_changed.emit(self.queue)
-            self.cursor_changed.emit(0)
-        elif slot != self.cursor:
-            self.cursor = slot
-            self.cursor_changed.emit(slot)
+        if not (0 <= self.cursor < len(self.queue) and self.queue[self.cursor].video_id == song.video_id):
+            slot = self.index_of(song.video_id)
+            if slot < 0:
+                self.queue = [song]
+                self.cursor = 0
+                self.queue_changed.emit(self.queue)
+                self.cursor_changed.emit(0)
+            elif slot != self.cursor:
+                self.cursor = slot
+                self.cursor_changed.emit(slot)
 
         self._wanted = song.video_id
         self._failed_id = None  # allow manual retries of failed tracks
@@ -505,13 +528,15 @@ class PlaybackCore(QObject):
 
     # ------------------------------------------------------------------ loading
     def _start_load(self, song: Song) -> None:
+        if self._active_load_job is not None:
+            self._active_load_job.cancel()
+            self._active_load_job = None
+
         if song.stream_url and not self.resolver.is_url_expired(song.stream_url):
             log.debug("Using pre-buffered stream URL for %s", song.video_id)
             self._on_stream_ready(song, song.stream_url)
             return
 
-        if self._active_load_job is not None:
-            self._active_load_job.cancel()
         job = LoadJob(song, self.resolver)
         self._active_load_job = job
         job.signals.ready.connect(self._on_stream_ready)
@@ -619,7 +644,7 @@ class PlaybackCore(QObject):
                     job = LoadJob(next_song, self.resolver)
                     def _on_prebuffered(s: Song, url: str) -> None:
                         s.stream_url = url
-                    job.signals.ready.connect(_on_prebuffered)
+                    job.signals.ready.connect(_on_prebuffered, Qt.ConnectionType.QueuedConnection)
                     self.pool.start(job)
 
     def _relay_length(self, duration_ms: int) -> None:
@@ -635,6 +660,18 @@ class PlaybackCore(QObject):
         self.playing_changed.emit(state == QMediaPlayer.PlaybackState.PlayingState)
 
     def _relay_media_status(self, status: QMediaPlayer.MediaStatus) -> None:
+        if status == QMediaPlayer.MediaStatus.StalledMedia:
+            log.warning("Playback stalled due to buffer underrun. Waiting for buffer...")
+            self.notice.emit("buffering...")
+            QTimer.singleShot(1500, self._resume_from_stall)
+            return
+
+        if status == QMediaPlayer.MediaStatus.BufferedMedia:
+            if getattr(self, "_was_stalled", False) and self.is_playing:
+                self._was_stalled = False
+                self.player.play()
+            return
+
         if status == QMediaPlayer.MediaStatus.EndOfMedia and not self._switching:
             log.debug("track finished — rolling into the next one")
             if self.repeat_mode == "one" and self.current is not None:
@@ -645,6 +682,11 @@ class PlaybackCore(QObject):
                 self.play_at(0)
                 return
             self.forward(force=True)
+
+    def _resume_from_stall(self) -> None:
+        if self.is_playing and self.player.mediaStatus() != QMediaPlayer.MediaStatus.EndOfMedia:
+            self._was_stalled = True
+            self.player.play()
 
     def _relay_error(self, error: QMediaPlayer.Error, message: str) -> None:
         # Ignore errors from old tracks being unloaded during fast track change
