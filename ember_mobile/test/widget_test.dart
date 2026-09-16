@@ -413,11 +413,10 @@ void main() {
         artworkUrl: '',
         streamUrl: 'https://example.com/audio.m4a',
       );
-      expect(defaultSong.source, 'unknown');
-      expect(defaultSong.isUnknown, isTrue);
+      expect(defaultSong.source, 'saavn');
+      expect(defaultSong.isJioSaavn, isTrue);
       expect(defaultSong.isSpotify, isFalse);
       expect(defaultSong.isYouTube, isFalse);
-      expect(defaultSong.isJioSaavn, isFalse);
 
       final ytSong = defaultSong.copyWith(id: 'yt_xyz', source: 'youtube');
       expect(ytSong.source, 'youtube');

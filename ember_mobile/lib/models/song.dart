@@ -21,7 +21,7 @@ class Song {
     required this.streamUrl,
     this.lyrics,
     this.isFavorite = false,
-    this.source = 'unknown',
+    this.source = 'saavn',
   });
 
   bool get isSpotify => source == 'spotify' || id.startsWith('sp_') || streamUrl.startsWith('spotify:');

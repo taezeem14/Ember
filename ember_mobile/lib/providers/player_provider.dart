@@ -563,37 +563,10 @@ class PlayerProvider extends ChangeNotifier {
     _isSearching = true;
     notifyListeners();
 
-    // Debounce 300ms before firing live multi-engine search
-    _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
+    // Debounce 250ms before firing live JioSaavn 320kbps search
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () async {
       try {
-        List<Song> results = [];
-
-        if (_searchEngine == 'YouTube') {
-          results = await YouTubeImporterService.searchYouTube(trimmed, limit: 30);
-        } else if (_searchEngine == 'Spotify') {
-          results = await SpotifyService.searchSpotify(trimmed, limit: 30);
-        } else if (_searchEngine == 'JioSaavn') {
-          results = await CatalogService.searchOnline(trimmed, limit: 30);
-        } else {
-          // Tri-Engine: Query YouTube (NewPipe), Spotify (Spotube), and JioSaavn (320kbps) in parallel
-          final futures = await Future.wait([
-            YouTubeImporterService.searchYouTube(trimmed, limit: 12).catchError((_) => <Song>[]),
-            SpotifyService.searchSpotify(trimmed, limit: 12).catchError((_) => <Song>[]),
-            CatalogService.searchOnline(trimmed, limit: 12).catchError((_) => <Song>[]),
-          ]);
-
-          final ytList = futures[0];
-          final spList = futures[1];
-          final jioList = futures[2];
-
-          final maxLen = [ytList.length, spList.length, jioList.length].reduce((a, b) => a > b ? a : b);
-          final seenIds = <String>{};
-          for (int i = 0; i < maxLen; i++) {
-            if (i < ytList.length && seenIds.add(ytList[i].id)) results.add(ytList[i]);
-            if (i < spList.length && seenIds.add(spList[i].id)) results.add(spList[i]);
-            if (i < jioList.length && seenIds.add(jioList[i].id)) results.add(jioList[i]);
-          }
-        }
+        final results = await CatalogService.searchOnline(trimmed, limit: 35);
 
         if (_searchQuery == query) {
           if (results.isNotEmpty) {
