@@ -26,6 +26,7 @@ class Song {
 
   bool get isSpotify => source == 'spotify' || id.startsWith('sp_') || streamUrl.startsWith('spotify:');
   bool get isYouTube => source == 'youtube' || id.startsWith('yt_') || streamUrl.contains('youtu');
+  bool get isJioSaavn => source == 'saavn' || id.startsWith('saavn_') || streamUrl.contains('saavncdn.com');
 
   Song copyWith({
     String? id,
@@ -66,16 +67,24 @@ class Song {
   }
 
   factory Song.fromMap(Map<String, dynamic> map) {
+    final rawId = map['id'] as String? ?? '';
+    final rawStream = map['stream_url'] as String? ?? '';
+    final explicitSource = map['source'] as String?;
+    final inferredSource = explicitSource ??
+        (rawId.startsWith('yt_') || rawStream.contains('youtu') ? 'youtube' :
+         rawId.startsWith('saavn_') || rawStream.contains('saavncdn.com') ? 'saavn' :
+         'spotify');
+
     return Song(
-      id: map['id'] as String? ?? '',
+      id: rawId,
       title: map['title'] as String? ?? 'Unknown Title',
       artist: map['artist'] as String? ?? 'Unknown Artist',
       duration: Duration(milliseconds: (map['duration_ms'] as num?)?.toInt() ?? 0),
       artworkUrl: map['artwork_url'] as String? ?? '',
-      streamUrl: map['stream_url'] as String? ?? '',
+      streamUrl: rawStream,
       lyrics: map['lyrics'] as String?,
       isFavorite: map['is_favorite'] as bool? ?? false,
-      source: map['source'] as String? ?? 'spotify',
+      source: inferredSource,
     );
   }
 

@@ -39,12 +39,15 @@ class PlayerProvider extends ChangeNotifier {
   int _consecutiveStreamFailures = 0;
   static const int _maxConsecutiveFailures = 3;
 
-  // Spotify & YouTube Library state
+  // Tri-Engine (YouTube, Spotify, JioSaavn) Library state
   List<Song> _spotifyTracks = [];
   bool _isLoadingSpotify = false;
   String _activeSpotifyChart = 'top_hits';
   List<Song> _youtubeTracks = [];
   bool _isLoadingYouTube = false;
+  List<Song> _saavnTracks = [];
+  bool _isLoadingSaavn = false;
+  String _searchEngine = 'All'; // 'All', 'YouTube', 'Spotify', 'JioSaavn'
 
   // Equalizer state
   String _eqPreset = 'Warm Tape';
@@ -99,6 +102,18 @@ class PlayerProvider extends ChangeNotifier {
   String get activeSpotifyChart => _activeSpotifyChart;
   List<Song> get youtubeTracks => _youtubeTracks;
   bool get isLoadingYouTube => _isLoadingYouTube;
+  List<Song> get saavnTracks => _saavnTracks;
+  bool get isLoadingSaavn => _isLoadingSaavn;
+  String get searchEngine => _searchEngine;
+
+  void setSearchEngine(String engine) {
+    _searchEngine = engine;
+    if (_searchQuery.trim().isNotEmpty) {
+      search(_searchQuery);
+    } else {
+      notifyListeners();
+    }
+  }
 
   String get eqPreset => _eqPreset;
   bool get eqEnabled => _eqEnabled;
@@ -493,7 +508,10 @@ class PlayerProvider extends ChangeNotifier {
   // Backward-compatible alias
   Future<void> selectMood(String moodKey) => selectCategory(moodKey);
 
-  void search(String query) {
+  void search(String query, {String? engine}) {
+    if (engine != null) {
+      _searchEngine = engine;
+    }
     _searchQuery = query;
     _searchDebounce?.cancel();
 
@@ -526,12 +544,42 @@ class PlayerProvider extends ChangeNotifier {
     _isSearching = true;
     notifyListeners();
 
-    // Debounce 350ms before firing live online music search
-    _searchDebounce = Timer(const Duration(milliseconds: 350), () async {
+    // Debounce 300ms before firing live multi-engine search
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
       try {
-        final onlineResults = await CatalogService.searchOnline(trimmed);
+        List<Song> results = [];
+
+        if (_searchEngine == 'YouTube') {
+          results = await YouTubeImporterService.searchYouTube(trimmed, limit: 30);
+        } else if (_searchEngine == 'Spotify') {
+          results = await SpotifyService.searchSpotify(trimmed, limit: 30);
+        } else if (_searchEngine == 'JioSaavn') {
+          results = await CatalogService.searchOnline(trimmed, limit: 30);
+        } else {
+          // Tri-Engine: Query YouTube (NewPipe), Spotify (Spotube), and JioSaavn (320kbps) in parallel
+          final futures = await Future.wait([
+            YouTubeImporterService.searchYouTube(trimmed, limit: 12).catchError((_) => <Song>[]),
+            SpotifyService.searchSpotify(trimmed, limit: 12).catchError((_) => <Song>[]),
+            CatalogService.searchOnline(trimmed, limit: 12).catchError((_) => <Song>[]),
+          ]);
+
+          final ytList = futures[0];
+          final spList = futures[1];
+          final jioList = futures[2];
+
+          final maxLen = [ytList.length, spList.length, jioList.length].reduce((a, b) => a > b ? a : b);
+          final seenIds = <String>{};
+          for (int i = 0; i < maxLen; i++) {
+            if (i < ytList.length && seenIds.add(ytList[i].id)) results.add(ytList[i]);
+            if (i < spList.length && seenIds.add(spList[i].id)) results.add(spList[i]);
+            if (i < jioList.length && seenIds.add(jioList[i].id)) results.add(jioList[i]);
+          }
+        }
+
         if (_searchQuery == query) {
-          _searchResults = onlineResults;
+          if (results.isNotEmpty) {
+            _searchResults = results;
+          }
           _isSearching = false;
           notifyListeners();
         }
@@ -792,6 +840,24 @@ class PlayerProvider extends ChangeNotifier {
       debugPrint('Error loading YouTube trending: $e');
     } finally {
       _isLoadingYouTube = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadSaavnHits() async {
+    if (_saavnTracks.isNotEmpty) return;
+    _isLoadingSaavn = true;
+    notifyListeners();
+
+    try {
+      final tracks = await CatalogService.searchOnline('Top Bollywood Punjabi Pop Hits 2026', limit: 25);
+      if (tracks.isNotEmpty) {
+        _saavnTracks = tracks;
+      }
+    } catch (e) {
+      debugPrint('Error loading JioSaavn hits: $e');
+    } finally {
+      _isLoadingSaavn = false;
       notifyListeners();
     }
   }

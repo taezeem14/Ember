@@ -404,7 +404,7 @@ void main() {
   });
 
   group('Song Source and Engine Model Tests', () {
-    test('Song model source defaults to spotify and supports youtube', () {
+    test('Song model source defaults to spotify and supports youtube and saavn', () {
       const defaultSong = Song(
         id: '123',
         title: 'Song',
@@ -416,17 +416,31 @@ void main() {
       expect(defaultSong.source, 'spotify');
       expect(defaultSong.isSpotify, isTrue);
       expect(defaultSong.isYouTube, isFalse);
+      expect(defaultSong.isJioSaavn, isFalse);
 
       final ytSong = defaultSong.copyWith(id: 'yt_xyz', source: 'youtube');
       expect(ytSong.source, 'youtube');
       expect(ytSong.isSpotify, isFalse);
       expect(ytSong.isYouTube, isTrue);
+      expect(ytSong.isJioSaavn, isFalse);
+
+      final saavnSong = defaultSong.copyWith(id: 'saavn_xyz', source: 'saavn', streamUrl: 'https://aac.saavncdn.com/test.mp4');
+      expect(saavnSong.source, 'saavn');
+      expect(saavnSong.isSpotify, isFalse);
+      expect(saavnSong.isYouTube, isFalse);
+      expect(saavnSong.isJioSaavn, isTrue);
 
       final map = ytSong.toMap();
       expect(map['source'], 'youtube');
       final revived = Song.fromMap(map);
       expect(revived.source, 'youtube');
       expect(revived.isYouTube, isTrue);
+
+      final saavnMap = saavnSong.toMap();
+      expect(saavnMap['source'], 'saavn');
+      final revivedSaavn = Song.fromMap(saavnMap);
+      expect(revivedSaavn.source, 'saavn');
+      expect(revivedSaavn.isJioSaavn, isTrue);
     });
   });
 

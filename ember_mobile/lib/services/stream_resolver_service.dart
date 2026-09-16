@@ -144,75 +144,116 @@ class StreamResolverService {
     return null;
   }
 
-  /// Source-Aware Stream Resolution Engine:
-  /// - YouTube songs → resolve via their actual YouTube video ID (preserves exact version: slowed, reverb, remix, etc.)
-  /// - JioSaavn songs → play direct CDN 320kbps stream
-  /// - Local/offline files → play directly
-  /// - Unknown source → try JioSaavn search, then iTunes, then YouTube search as last resort
+  /// Tri-Engine (Multi-Thrice) Playback Resolver:
+  /// - YouTube Engine (NewPipe): videoId direct audio stream, preserves exact variant (slowed+reverb, remix, etc.)
+  /// - Spotify Engine (Spotube): Spotube candidate matching for studio track audio (strict duration & Topic channel)
+  /// - JioSaavn Engine: 320kbps direct CDN streaming (aac.saavncdn.com)
+  /// - Local/Offline: direct device storage playback
   static Future<List<String>> resolvePlayableStreamCandidates(Song song) async {
     final candidates = <String>[];
     final s = song.streamUrl;
 
-    // ─── 1. LOCAL / OFFLINE / DIRECT CDN ───
-    // Already a directly playable URL or local file — use as-is
-    if (s.isNotEmpty &&
-        (s.contains('saavncdn.com') ||
-         s.startsWith('/') ||
-         s.startsWith('file://') ||
-         s.contains('itunes.apple.com') ||
-         s.contains('googlevideo.com') ||
-         s.contains('rr') && s.contains('.googlevideo.com'))) {
+    // ─── 1. LOCAL / OFFLINE FILES ───
+    if (s.isNotEmpty && (s.startsWith('/') || s.startsWith('file://'))) {
       return [s];
     }
 
-    // ─── 2. YOUTUBE-SOURCED SONGS → Resolve via actual video ID ───
-    // This preserves the EXACT version the user imported (slowed+reverb, remix, live, etc.)
-    // NEVER substitute a JioSaavn search result for a YouTube-imported song
-    final isYouTubeSong = song.id.startsWith('yt_') ||
-        s.contains('youtube.com/watch') ||
-        s.contains('youtu.be/') ||
-        song.source == 'youtube';
+    // ─── 2. DIRECT MEDIA STREAMS (Already resolved or direct audio file) ───
+    if (s.isNotEmpty &&
+        !s.startsWith('spotify:') &&
+        !s.contains('youtube.com/watch') &&
+        !s.contains('youtu.be/') &&
+        (s.contains('saavncdn.com') ||
+         s.contains('itunes.apple.com') ||
+         s.contains('googlevideo.com') ||
+         s.endsWith('.mp3') ||
+         s.endsWith('.m4a') ||
+         s.endsWith('.mp4') ||
+         s.endsWith('.aac') ||
+         s.contains('.m4a') ||
+         s.contains('.mp3') ||
+         (s.contains('rr') && s.contains('.googlevideo.com')))) {
+      return [s];
+    }
 
-    if (isYouTubeSong) {
-      // Extract the video ID from the song
+    // ─── 3. YOUTUBE ENGINE (NewPipe Architecture) ───
+    // If it's a YouTube-sourced track, resolve strictly from YouTube via video ID
+    // NEVER substitute JioSaavn or Spotify! Preserves slowed+reverb, live, remix, acoustic!
+    final isYt = song.isYouTube || song.id.startsWith('yt_') || s.contains('youtube.com') || s.contains('youtu.be');
+    if (isYt) {
       String? videoId;
       if (song.id.startsWith('yt_')) {
         videoId = song.id.replaceFirst('yt_', '');
       }
-      if (videoId == null || videoId.isEmpty) {
-        videoId = YouTubeImporterService.extractVideoId(s);
-      }
+      videoId ??= YouTubeImporterService.extractVideoId(s);
 
       if (videoId != null && videoId.isNotEmpty) {
         try {
           final ytStream = await YouTubeImporterService.getAudioStreamUrl(videoId);
           if (ytStream != null && ytStream.isNotEmpty) {
-            debugPrint('YouTube direct stream resolved for "${song.title}" [vid=$videoId]');
+            debugPrint('[NewPipe Engine] YouTube direct stream resolved for "${song.title}" [vid=$videoId]');
             return [ytStream];
           }
         } catch (e) {
-          debugPrint('YouTube direct stream error for "$videoId": $e');
+          debugPrint('[NewPipe Engine] Direct stream error for "$videoId": $e');
         }
       }
 
-      // YouTube fallback: search YouTube by title (still stays on YouTube, never JioSaavn)
+      // YouTube search fallback (stays strictly on YouTube)
       try {
         final ytFallback = await resolveFromYouTube(song);
         if (ytFallback != null && ytFallback.isNotEmpty) {
-          debugPrint('YouTube search fallback resolved for "${song.title}"');
+          debugPrint('[NewPipe Engine] YouTube search fallback resolved for "${song.title}"');
           return [ytFallback];
         }
       } catch (e) {
-        debugPrint('YouTube search fallback error: $e');
+        debugPrint('[NewPipe Engine] Search fallback error: $e');
       }
 
-      // If YouTube completely fails, don't return empty — try other sources as emergency
-      debugPrint('WARNING: YouTube resolution completely failed for "${song.title}". Trying emergency fallbacks...');
+      return candidates;
     }
 
-    // ─── 3. JIOSAAVN-SOURCED SONGS → 320kbps Direct CDN ───
-    // Only search JioSaavn for songs that actually came from JioSaavn or have no known source
-    if (!isYouTubeSong) {
+    // ─── 4. SPOTIFY ENGINE (Spotube Architecture) ───
+    // Spotube candidate matching against YouTube Music Topic studio tracks
+    // Filters out noise (live/reverb/parody) to deliver true studio audio!
+    final isSp = song.isSpotify || song.id.startsWith('sp_') || s.startsWith('spotify:');
+    if (isSp) {
+      try {
+        debugPrint('[Spotube Engine] Resolving studio audio for Spotify track: "${song.title}" by "${song.artist}"');
+        final spotubeStream = await resolveFromYouTube(song);
+        if (spotubeStream != null && spotubeStream.isNotEmpty) {
+          debugPrint('[Spotube Engine] Successfully matched studio stream for "${song.title}"');
+          return [spotubeStream];
+        }
+      } catch (e) {
+        debugPrint('[Spotube Engine] Match error: $e');
+      }
+
+      // Secondary Spotube fallback: iTunes 256kbps AAC preview
+      final meta = YouTubeImporterService.parseYouTubeMetadata(song.title, song.artist);
+      try {
+        final itunesUrl = Uri.parse(
+          'https://itunes.apple.com/search?term=${Uri.encodeComponent(meta.searchQuery)}&entity=song&limit=3',
+        );
+        final resp = await http.get(itunesUrl).timeout(const Duration(seconds: 4));
+        if (resp.statusCode == 200) {
+          final data = jsonDecode(resp.body) as Map<String, dynamic>;
+          final list = data['results'] as List? ?? [];
+          for (final item in list) {
+            final prev = item['previewUrl'] as String?;
+            if (prev != null && prev.isNotEmpty) {
+              return [prev];
+            }
+          }
+        }
+      } catch (_) {}
+
+      return candidates;
+    }
+
+    // ─── 5. JIOSAAVN ENGINE (320kbps Audiophile Direct CDN) ───
+    // If the song is from JioSaavn, resolve strictly from JioSaavn CDN
+    if (song.isJioSaavn || song.source == 'saavn') {
       try {
         final query = song.artist != 'Unknown Artist' && song.artist.isNotEmpty
             ? '${song.title} ${song.artist}'
@@ -220,45 +261,28 @@ class StreamResolverService {
         final saavnMatches = await CatalogService.searchOnline(query, limit: 3);
         for (final match in saavnMatches) {
           if (match.streamUrl.isNotEmpty && match.streamUrl.contains('saavncdn.com')) {
-            candidates.add(match.streamUrl);
-            return candidates;
+            debugPrint('[JioSaavn Engine] Direct 320kbps CDN stream matched for "${song.title}"');
+            return [match.streamUrl];
           }
         }
       } catch (e) {
-        debugPrint('JioSaavn stream resolution error: $e');
+        debugPrint('[JioSaavn Engine] Stream resolution error: $e');
       }
+      return candidates;
     }
 
-    // ─── 4. ITUNES PREVIEW FALLBACK ───
-    final meta = YouTubeImporterService.parseYouTubeMetadata(song.title, song.artist);
+    // ─── 6. UNKNOWN / GENERAL TRACK RESOLUTION ───
     try {
-      final itunesUrl = Uri.parse(
-        'https://itunes.apple.com/search?term=${Uri.encodeComponent(meta.searchQuery)}&entity=song&limit=3',
-      );
-      final resp = await http.get(itunesUrl).timeout(const Duration(seconds: 4));
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final list = data['results'] as List? ?? [];
-        for (final item in list) {
-          final prev = item['previewUrl'] as String?;
-          if (prev != null && prev.isNotEmpty) {
-            candidates.add(prev);
-            break;
-          }
-        }
+      final saavnMatches = await CatalogService.searchOnline('${song.title} ${song.artist}', limit: 2);
+      for (final match in saavnMatches) {
+        if (match.streamUrl.contains('saavncdn.com')) return [match.streamUrl];
       }
     } catch (_) {}
 
-    // ─── 5. LAST RESORT: YouTube search (for non-YouTube songs that failed JioSaavn) ───
-    if (candidates.isEmpty && !isYouTubeSong) {
-      final ytAudio = await resolveFromYouTube(song);
-      if (ytAudio != null && ytAudio.isNotEmpty) {
-        candidates.add(ytAudio);
-      }
-    }
+    final fallbackYt = await resolveFromYouTube(song);
+    if (fallbackYt != null) return [fallbackYt];
 
-    if (candidates.isEmpty && s.isNotEmpty && !s.startsWith('spotify:') &&
-        !s.contains('youtube.com/watch') && !s.contains('youtu.be/')) {
+    if (s.isNotEmpty && !s.startsWith('spotify:') && !s.contains('youtube.com/watch') && !s.contains('youtu.be/')) {
       candidates.add(s);
     }
 

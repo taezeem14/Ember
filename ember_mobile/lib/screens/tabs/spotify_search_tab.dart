@@ -105,6 +105,64 @@ class _SpotifySearchTabState extends State<SpotifySearchTab> {
     player.search(category.query);
   }
 
+  Widget _buildEnginePill(PlayerProvider player, String engineKey, String label) {
+    final isSelected = player.searchEngine == engineKey;
+    Color activeColor;
+    if (engineKey == 'YouTube') {
+      activeColor = const Color(0xFFFF4444);
+    } else if (engineKey == 'Spotify') {
+      activeColor = const Color(0xFF1DB954);
+    } else if (engineKey == 'JioSaavn') {
+      activeColor = const Color(0xFF00E5FF);
+    } else {
+      activeColor = EmberColors.electricBlue;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: GestureDetector(
+        onTap: () {
+          player.setSearchEngine(engineKey);
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+          decoration: BoxDecoration(
+            color: isSelected ? activeColor.withValues(alpha: 0.18) : EmberColors.charcoalCard,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isSelected ? activeColor : EmberColors.glassBorder.withValues(alpha: 0.25),
+              width: 1.2,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (engineKey == 'YouTube') ...[
+                FaIcon(FontAwesomeIcons.youtube, size: 11, color: isSelected ? activeColor : EmberColors.textMuted),
+                const SizedBox(width: 5),
+              ] else if (engineKey == 'Spotify') ...[
+                FaIcon(FontAwesomeIcons.spotify, size: 11, color: isSelected ? activeColor : EmberColors.textMuted),
+                const SizedBox(width: 5),
+              ] else if (engineKey == 'JioSaavn') ...[
+                FaIcon(FontAwesomeIcons.bolt, size: 10, color: isSelected ? activeColor : EmberColors.textMuted),
+                const SizedBox(width: 5),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? activeColor : EmberColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
@@ -145,12 +203,14 @@ class _SpotifySearchTabState extends State<SpotifySearchTab> {
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          FaIcon(FontAwesomeIcons.spotify, size: 13, color: EmberColors.electricBlue),
-                          SizedBox(width: 4),
-                          FaIcon(FontAwesomeIcons.youtube, size: 13, color: EmberColors.electricBlue),
+                          FaIcon(FontAwesomeIcons.spotify, size: 13, color: Color(0xFF1DB954)),
+                          SizedBox(width: 5),
+                          FaIcon(FontAwesomeIcons.youtube, size: 13, color: Color(0xFFFF0000)),
+                          SizedBox(width: 5),
+                          FaIcon(FontAwesomeIcons.bolt, size: 12, color: EmberColors.electricBlue),
                           SizedBox(width: 6),
                           Text(
-                            'Dual-Core',
+                            'Tri-Engine',
                             style: TextStyle(
                               color: EmberColors.electricBlue,
                               fontSize: 11,
@@ -232,6 +292,24 @@ class _SpotifySearchTabState extends State<SpotifySearchTab> {
                             ),
                           ),
                         ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // 2b. Tri-Engine Filter Pills
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildEnginePill(player, 'All', 'Tri-Core (All 3)'),
+                      _buildEnginePill(player, 'YouTube', 'YouTube (NewPipe)'),
+                      _buildEnginePill(player, 'Spotify', 'Spotify (Spotube)'),
+                      _buildEnginePill(player, 'JioSaavn', 'JioSaavn (320kbps)'),
                     ],
                   ),
                 ),
@@ -546,17 +624,27 @@ class _SearchResultRow extends StatelessWidget {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                         decoration: BoxDecoration(
-                          color: song.isSpotify
-                              ? const Color(0xFF1DB954).withValues(alpha: 0.2)
-                              : const Color(0xFFFF0000).withValues(alpha: 0.2),
+                          color: song.isJioSaavn
+                              ? const Color(0xFF00E5FF).withValues(alpha: 0.2)
+                              : song.isYouTube
+                                  ? const Color(0xFFFF0000).withValues(alpha: 0.2)
+                                  : const Color(0xFF1DB954).withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(3),
                         ),
                         child: Text(
-                          song.isSpotify ? 'SPOTIFY' : 'YOUTUBE',
+                          song.isJioSaavn
+                              ? 'JIOSAAVN 320K'
+                              : song.isYouTube
+                                  ? 'YOUTUBE'
+                                  : 'SPOTIFY',
                           style: TextStyle(
-                            color: song.isSpotify ? const Color(0xFF1DB954) : const Color(0xFFFF4444),
+                            color: song.isJioSaavn
+                                ? const Color(0xFF00E5FF)
+                                : song.isYouTube
+                                    ? const Color(0xFFFF4444)
+                                    : const Color(0xFF1DB954),
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
                           ),

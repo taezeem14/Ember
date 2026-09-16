@@ -42,6 +42,7 @@ class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
       final player = context.read<PlayerProvider>();
       player.loadSpotifyChart('top_hits');
       player.loadYouTubeTrending();
+      player.loadSaavnHits();
     });
   }
 
@@ -90,14 +91,14 @@ class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
             ],
           ),
 
-          // 2. Filter Pills Row (All, Music, Podcasts, Charts)
+          // 2. Filter Pills Row (All, Spotify, YouTube, JioSaavn, Charts)
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
-                  children: ['All', 'Music', 'Podcasts', 'Charts'].map((pill) {
+                  children: ['All', 'Spotify', 'YouTube', 'JioSaavn', 'Charts'].map((pill) {
                     final isSelected = _selectedPill == pill;
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
@@ -241,6 +242,38 @@ class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
                       itemCount: player.youtubeTracks.take(12).length,
                       itemBuilder: (context, index) {
                         final track = player.youtubeTracks[index];
+                        return _buildTrackCarouselCard(track, () => player.playSong(track));
+                      },
+                    ),
+            ),
+          ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+
+          // 5b. Section: JioSaavn 320kbps Audiophile Hits
+          SliverToBoxAdapter(
+            child: _buildSectionHeader(
+              title: 'JioSaavn 320kbps Audiophile Hits',
+              subtitle: 'Pristine 320kbps studio audio • Bollywood, Punjabi & Pop',
+              actionText: 'Play all',
+              onAction: () {
+                if (player.saavnTracks.isNotEmpty) {
+                  player.playCategoryTracks(player.saavnTracks);
+                }
+              },
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: 200,
+              child: player.isLoadingSaavn
+                  ? const Center(child: CircularProgressIndicator(color: EmberColors.primaryBlue))
+                  : ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: player.saavnTracks.take(12).length,
+                      itemBuilder: (context, index) {
+                        final track = player.saavnTracks[index];
                         return _buildTrackCarouselCard(track, () => player.playSong(track));
                       },
                     ),
@@ -600,14 +633,48 @@ class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
               ),
             ),
             const SizedBox(height: 2),
-            Text(
-              track.artist,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: EmberColors.textSecondary,
-                fontSize: 11,
-              ),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: track.isJioSaavn
+                        ? const Color(0xFF00E5FF).withValues(alpha: 0.2)
+                        : track.isYouTube
+                            ? const Color(0xFFFF0000).withValues(alpha: 0.2)
+                            : const Color(0xFF1DB954).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    track.isJioSaavn
+                        ? '320K'
+                        : track.isYouTube
+                            ? 'YT'
+                            : 'SPOTIFY',
+                    style: TextStyle(
+                      color: track.isJioSaavn
+                          ? const Color(0xFF00E5FF)
+                          : track.isYouTube
+                              ? const Color(0xFFFF4444)
+                              : const Color(0xFF1DB954),
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    track.artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: EmberColors.textSecondary,
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

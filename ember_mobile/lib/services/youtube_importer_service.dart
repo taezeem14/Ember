@@ -275,6 +275,7 @@ class YouTubeImporterService {
                 duration: parseDurationText(durText),
                 artworkUrl: art,
                 streamUrl: 'https://www.youtube.com/watch?v=$vId',
+                source: 'youtube',
               ),
             );
           }
@@ -349,6 +350,7 @@ class YouTubeImporterService {
                 duration: video.duration ?? const Duration(minutes: 3, seconds: 30),
                 artworkUrl: artwork,
                 streamUrl: 'https://www.youtube.com/watch?v=${video.id.value}',
+                source: 'youtube',
               ),
             );
           }
@@ -403,6 +405,7 @@ class YouTubeImporterService {
           duration: video.duration ?? const Duration(minutes: 3, seconds: 30),
           artworkUrl: artwork,
           streamUrl: streamUrl,
+          source: 'youtube',
         );
 
         return YouTubeImportResult(type: YouTubeImportType.video, song: song);
@@ -473,6 +476,7 @@ class YouTubeImporterService {
                   duration: parseDurationText(durText),
                   artworkUrl: 'https://i.ytimg.com/vi/$vId/hqdefault.jpg',
                   streamUrl: 'https://www.youtube.com/watch?v=$vId',
+                  source: 'youtube',
                 ),
               );
 
