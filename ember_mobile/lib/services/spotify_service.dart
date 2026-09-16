@@ -209,8 +209,6 @@ class SpotifyService {
             final millis = (item['trackTimeMillis'] as num?)?.toInt() ?? 210000;
             final rawArt = item['artworkUrl100'] as String? ?? '';
             final art = rawArt.replaceAll('100x100', '600x600');
-            final preview = item['previewUrl'] as String? ?? '';
-
             parsed.add(
               Song(
                 id: 'sp_$trackId',
@@ -218,7 +216,7 @@ class SpotifyService {
                 artist: artist,
                 duration: Duration(milliseconds: millis),
                 artworkUrl: art,
-                streamUrl: preview.isNotEmpty ? preview : 'spotify:track:$trackId',
+                streamUrl: 'spotify:track:$trackId',
                 source: 'spotify',
               ),
             );

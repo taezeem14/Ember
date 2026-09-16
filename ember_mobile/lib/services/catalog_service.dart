@@ -102,6 +102,19 @@ class CatalogService {
     }
   }
 
+  /// Returns candidate bitrate stream URLs (320kbps, 160kbps, 96kbps)
+  /// Older or regional JioSaavn songs may not have _320.mp4 available on CDN.
+  static List<String> getDecryptedStreamCandidates(String? encryptedMediaUrl) {
+    final primary = decryptMediaUrl(encryptedMediaUrl);
+    if (primary == null || primary.isEmpty) return [];
+    final candidates = <String>[primary];
+    if (primary.contains('_320.mp4')) {
+      candidates.add(primary.replaceAll('_320.mp4', '_160.mp4'));
+      candidates.add(primary.replaceAll('_320.mp4', '_96.mp4'));
+    }
+    return candidates;
+  }
+
   static String _unescape(dynamic text) {
     if (text == null) return '';
     return text
@@ -194,52 +207,7 @@ class CatalogService {
       debugPrint('JioSaavn primary search error: $e');
     }
 
-    // 2. Secondary Fallback: Global iTunes catalogue
-    try {
-      final itunesUrl = Uri.parse(
-        'https://itunes.apple.com/search?term=${Uri.encodeComponent(q)}&entity=song&limit=$limit',
-      );
-      final resp = await http.get(itunesUrl).timeout(const Duration(seconds: 5));
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final rawResults = data['results'] as List? ?? [];
-        final parsed = <Song>[];
-
-        for (final item in rawResults) {
-          if (item is Map<String, dynamic>) {
-            final trackName = item['trackName'] as String?;
-            final artistName = item['artistName'] as String?;
-            final previewUrl = item['previewUrl'] as String?;
-            if (trackName == null || previewUrl == null || previewUrl.isEmpty) continue;
-
-            final trackId = 'itunes_${item['trackId']?.toString() ?? UniqueKey().toString()}';
-            final durationMs = (item['trackTimeMillis'] as num?)?.toInt() ?? 180000;
-            final rawArt = item['artworkUrl100'] as String? ?? '';
-            final artworkUrl = rawArt.replaceAll('100x100bb', '600x600bb');
-
-            parsed.add(
-              Song(
-                id: trackId,
-                title: trackName,
-                artist: artistName ?? 'Unknown Artist',
-                duration: Duration(milliseconds: durationMs),
-                artworkUrl: artworkUrl,
-                streamUrl: previewUrl,
-                source: 'itunes',
-              ),
-            );
-          }
-        }
-
-        if (parsed.isNotEmpty) {
-          return parsed;
-        }
-      }
-    } catch (e) {
-      debugPrint('iTunes search fallback error: $e');
-    }
-
-    // 3. Offline cache fallback
+    // 2. Offline cache fallback
     return search(query);
   }
 

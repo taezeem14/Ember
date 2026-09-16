@@ -237,7 +237,19 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       for (final url in candidates) {
         if (url.isEmpty || url.contains('youtube.com/watch') || url.contains('youtu.be/')) continue;
         try {
-          await _player.setUrl(url);
+          Map<String, String>? headers;
+          if (url.contains('googlevideo.com') || url.contains('youtube') || url.contains('youtu.be')) {
+            headers = {
+              'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+              'Referer': 'https://www.youtube.com/',
+            };
+          } else if (url.contains('saavncdn.com')) {
+            headers = {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            };
+          }
+
+          await _player.setUrl(url, headers: headers);
           if (_currentSong != targetSong) return; // Superseded during network connect
           await _player.play();
           started = true;

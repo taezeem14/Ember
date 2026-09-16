@@ -141,67 +141,76 @@ class YouTubeImporterService {
     );
   }
 
-  /// Resolve direct playable audio stream URL from a YouTube video ID.
-  /// Primary: youtube_explode_dart (client-side, no IP mismatch on mobile).
-  /// Fallback: Piped API (server-side proxy, bypasses cipher/throttle issues).
-  static Future<String?> getAudioStreamUrl(String videoId) async {
+  /// Returns all playable audio streams for a YouTube video ID in order of preference:
+  /// 1. MP4 / AAC streams (optimal hardware decoding on Android)
+  /// 2. WebM / Opus streams (audiophile audio quality)
+  /// 3. Muxed MP4 stream fallback
+  static Future<List<String>> getAudioStreamUrls(String videoId) async {
     final cleanId = videoId.replaceFirst('yt_', '').trim();
-    if (cleanId.isEmpty) return null;
+    if (cleanId.isEmpty) return [];
 
     final cached = _streamCache[cleanId];
     if (cached != null && DateTime.now().difference(cached.cachedAt).inHours < 4) {
-      return cached.url;
+      return [cached.url];
     }
 
-    // ─── PRIMARY: youtube_explode_dart (client-side) ───
     final yt = YoutubeExplode();
     try {
       final manifest = await yt.videos.streamsClient.getManifest(cleanId).timeout(const Duration(milliseconds: 9000));
+      final candidates = <String>[];
 
-      // 1. Android hardware decoder preference: MP4 / AAC audio stream
+      // 1. MP4 / AAC audio streams sorted by highest bitrate first
       final mp4Audio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
       if (mp4Audio.isNotEmpty) {
-        final audioStream = mp4Audio.withHighestBitrate();
-        final url = audioStream.url.toString();
-        _streamCache[cleanId] = (url: url, cachedAt: DateTime.now());
-        return url;
+        mp4Audio.sort((a, b) => b.bitrate.compareTo(a.bitrate));
+        for (final s in mp4Audio) {
+          candidates.add(s.url.toString());
+        }
       }
 
-      // 2. Muxed MP4 fallback
+      // 2. WebM / Opus audio streams sorted by highest bitrate first
+      final webmAudio = manifest.audioOnly.where((s) => s.container.name.toLowerCase() == 'webm').toList();
+      if (webmAudio.isNotEmpty) {
+        webmAudio.sort((a, b) => b.bitrate.compareTo(a.bitrate));
+        for (final s in webmAudio) {
+          candidates.add(s.url.toString());
+        }
+      }
+
+      // 3. Muxed MP4 fallback
       final muxedMp4 = manifest.muxed.where((s) => s.container.name.toLowerCase() == 'mp4').toList();
       if (muxedMp4.isNotEmpty) {
-        final stream = muxedMp4.withHighestBitrate();
-        final url = stream.url.toString();
-        _streamCache[cleanId] = (url: url, cachedAt: DateTime.now());
-        return url;
+        candidates.add(muxedMp4.withHighestBitrate().url.toString());
       }
 
-      // 3. Any audio stream (WebM/Opus)
-      if (manifest.audioOnly.isNotEmpty) {
-        final audioStream = manifest.audioOnly.withHighestBitrate();
-        final url = audioStream.url.toString();
-        _streamCache[cleanId] = (url: url, cachedAt: DateTime.now());
-        return url;
+      if (candidates.isNotEmpty) {
+        _streamCache[cleanId] = (url: candidates.first, cachedAt: DateTime.now());
+        return candidates;
       }
     } catch (e) {
-      debugPrint('[YouTube] youtube_explode_dart failed for $cleanId: $e — trying Piped fallback');
+      debugPrint('[YouTube] youtube_explode_dart getAudioStreamUrls error for $cleanId: $e');
     } finally {
       yt.close();
     }
 
-    // ─── FALLBACK: Piped API (server-side proxy) ───
+    // Fallback: Piped API proxy
     try {
       final pipedUrl = await PipedService.getAudioStream(cleanId);
       if (pipedUrl != null && pipedUrl.isNotEmpty) {
         _streamCache[cleanId] = (url: pipedUrl, cachedAt: DateTime.now());
-        debugPrint('[YouTube] Piped fallback resolved for $cleanId');
-        return pipedUrl;
+        return [pipedUrl];
       }
     } catch (e) {
-      debugPrint('[YouTube] Piped fallback also failed for $cleanId: $e');
+      debugPrint('[YouTube] Piped proxy fallback error for $cleanId: $e');
     }
 
-    return null;
+    return [];
+  }
+
+  /// Resolve direct playable audio stream URL from a YouTube video ID.
+  static Future<String?> getAudioStreamUrl(String videoId) async {
+    final urls = await getAudioStreamUrls(videoId);
+    return urls.isNotEmpty ? urls.first : null;
   }
 
   /// Non-blocking prefetch of streams for the first few tracks of a playlist
