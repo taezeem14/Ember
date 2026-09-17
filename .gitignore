@@ -23,6 +23,7 @@ Desktop.ini
 *.db
 .pytest_cache/
 *.apk
+!Ember.apk
 noor_mobile/
 noor_app_icon.png
 

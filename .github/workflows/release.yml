@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Ember.apk
+          name: Ember ${{ github.ref_name }} - Pure JioSaavn 320kbps Audiophile Edition
+          body: |
+            ## Ember ${{ github.ref_name }} - Pure JioSaavn 320kbps Audiophile Edition
+
+            ### Highlights:
+            - **Pure JioSaavn 320kbps Audio Engine**: Direct CDN streaming from `aac.saavncdn.com`.
+            - **Bitrate Fallback Chain**: 320kbps -> 160kbps -> 96kbps seamless stream fallbacks.
+            - **Accurate Token Verification**: Strict title and artist token matching to eliminate wrong song plays.
+            - **Pure Search Pipeline**: Instant 0ms local query cache + 300ms debouncing.
+            - **320kbps HD UI**: Sleek HD badges across the search interface.
+            - **Removed**: Broken YouTube and Spotify engines / 30-second clips.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
