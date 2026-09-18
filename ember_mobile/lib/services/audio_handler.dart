@@ -237,10 +237,11 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         if (url.isEmpty || url.contains('youtube.com/watch') || url.contains('youtu.be/')) continue;
         try {
           Map<String, String>? headers;
-          if (url.contains('googlevideo.com') || url.contains('youtube') || url.contains('youtu.be')) {
+          if (url.contains('googlevideo.com') || url.contains('youtube') || url.contains('youtu.be') || url.contains('piped')) {
             headers = {
-              'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
               'Referer': 'https://www.youtube.com/',
+              'Origin': 'https://www.youtube.com',
             };
           } else if (url.contains('saavncdn.com')) {
             headers = {

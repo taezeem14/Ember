@@ -161,6 +161,11 @@ class PlayerProvider extends ChangeNotifier {
         _consecutiveStreamFailures++;
         _isPlaying = false;
         notifyListeners();
+        // Auto-skip unplayable songs if queue has remaining songs and failures < 3
+        if (_queue.length > 1 && _consecutiveStreamFailures < 3) {
+          debugPrint('[PlayerProvider] Auto-advancing past failed stream to maintain playback continuity');
+          skipNext();
+        }
       },
     );
 

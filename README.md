@@ -104,36 +104,40 @@ Every search result is validated through `verifyMatch` token intersection before
 
 ---
 
-## ⚡ Pure JioSaavn 320kbps Audio Engine
+## ⚡ Tri-Engine Music Architecture (Spotify + YouTube + JioSaavn)
 
-Ember employs a streamlined, high-reliability JioSaavn-exclusive streaming pipeline:
+Ember integrates a resilient **Tri-Engine pipeline** that combines Spotify's global charts, YouTube Music's vast catalog, and JioSaavn's pristine 320 kbps streams:
 
 ```mermaid
 flowchart TD
-    A["Song Selected (Discover / Search / Queue)"] --> B{"Has Direct CDN URL?"}
-    B -- "Yes (saavncdn.com)" --> C["Direct CDN Stream\n320kbps → 160kbps → 96kbps"]
-    B -- "No (Song Title + Artist)" --> D["StreamResolverService.resolvePlayableStreamCandidates()"]
+    A["Song Selected (Home / Search / Queue)"] --> B{"Song Source / Engine"}
     
-    D --> E["Clean Title: Strip Noise Tags\n(Official Video, HD, Lyrics, etc.)"]
+    B -- "YouTube Track (isYouTube / yt_)" --> YT["YouTube Audio Pipeline"]
+    YT --> YT1["1. youtube_explode_dart Direct Audio Streams"]
+    YT1 -- "Success" --> PLAY["ExoPlayer with Streaming Headers\n(User-Agent, Referer, Origin)"]
+    YT1 -- "Fail / 403 Block" --> YT2["2. Piped API Multi-Instance Proxy\n(bypasses 403 on mobile)"]
+    YT2 -- "Success" --> PLAY
+    YT2 -- "Fail" --> SAAVN_FALLBACK["3. JioSaavn 320kbps Fallback"]
+    SAAVN_FALLBACK --> PLAY
     
-    E --> F["JioSaavn API Search\n(Title + Artist query, limit: 6)"]
-    F --> G{"verifyMatch()\nTitle & Artist Token Validation"}
+    B -- "Spotify Track (isSpotify / sp_)" --> SP["Spotube-Style Resolution"]
+    SP --> SP1["1. JioSaavn 320kbps CDN (Verified Match)"]
+    SP1 -- "Verified ✓" --> PLAY
+    SP1 -- "Not on Saavn (e.g. indie, covers)" --> SP2["2. YouTube Music / Piped Proxy Match"]
+    SP2 --> PLAY
     
-    G -- "Verified ✓" --> H["320kbps HD CDN Stream"]
-    G -- "No Match ✗" --> I["Title-only Fallback Search"]
-    I --> G
-    
-    G -- "All Failed" --> J["Graceful Error\n(No wrong song plays)"]
-    
-    H --> K["ExoPlayer Hardware-Accelerated Playback\nWith EQ + LoudnessEnhancer Makeup Gain"]
+    B -- "JioSaavn Track (saavn / saavncdn.com)" --> SAAVN["JioSaavn 320kbps Direct CDN Engine"]
+    SAAVN --> PLAY
 ```
 
 ### Key Design Principles
 
-1. **Strict Song Verification**: Every candidate is validated through `CatalogService.verifyMatch()` using Unicode-aware title/artist token intersection. No unverified audio ever plays.
-2. **DES CDN Decryption**: JioSaavn's encrypted media URLs are decrypted using the platform's DES key in ECB mode, then upgraded from 96 kbps to 320 kbps.
-3. **Graceful Degradation**: If 320 kbps is unavailable, Ember automatically falls back to 160 kbps, then 96 kbps. Both `.mp4` and `.m4a` CDN variants are supported.
-4. **No Wrong Songs**: If `verifyMatch` fails for all candidates, Ember returns an empty result and displays a clean error — it never plays the wrong track.
+1. **True Tri-Engine Flexibility**: Seamlessly listen across **Spotify** (charts & playlists via Spotify Embed API), **YouTube Music** (trending videos, mixes, indie tracks), and **JioSaavn** (studio 320 kbps audio).
+2. **Zero 403 Forbidden Errors**: YouTube streams utilize `youtube_explode_dart` with instant fallback to **Piped API multi-instance proxies** and injected browser request headers (`Referer`, `Origin`, `User-Agent`), completely eliminating playback blocks on mobile networks.
+3. **No Unplayable Songs**: Tracks absent from JioSaavn (such as indie songs, remixes, or acoustic versions) automatically resolve via YouTube Music, ensuring every single song plays.
+4. **Interactive Home Feed Pills**: Filter the home screen dynamically between `All`, `Spotify`, `YouTube`, `JioSaavn`, and `Charts` with a single tap.
+5. **DES CDN Decryption**: JioSaavn's encrypted media URLs are decrypted using the platform's DES key in ECB mode and upgraded from 96 kbps to 320 kbps.
+6. **Graceful Auto-Skip**: If a network or stream error occurs while playing from a queue, Ember automatically advances to the next track rather than freezing playback.
 
 ---
 
