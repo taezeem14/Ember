@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -27,11 +26,6 @@ void main() async {
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
     debugPrint('Ember Flutter Error: ${details.exception}');
-  };
-
-  PlatformDispatcher.instance.onError = (error, stack) {
-    debugPrint('Ember Global Async Error: $error');
-    return true;
   };
 
   EmberAudioHandler audioHandler;

@@ -148,105 +148,10 @@ class SpotifyService {
     return null;
   }
 
-  /// Scrapes authentic Spotify tracks directly from Spotify's web embed endpoint (zero auth, public, 100% authentic)
-  static Future<Playlist?> fetchPlaylistEmbed(String playlistId) async {
-    try {
-      final embedUrl = Uri.parse('https://open.spotify.com/embed/playlist/$playlistId');
-      final resp = await http.get(embedUrl, headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      }).timeout(const Duration(seconds: 8));
-
-      if (resp.statusCode == 200) {
-        final match = RegExp(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', dotAll: true).firstMatch(resp.body);
-        if (match != null) {
-          final jsonStr = match.group(1);
-          if (jsonStr != null) {
-            final data = jsonDecode(jsonStr) as Map<String, dynamic>;
-            final entity = data['props']?['pageProps']?['state']?['data']?['entity'] as Map<String, dynamic>?;
-            if (entity != null) {
-              final plTitle = entity['title'] as String? ?? 'Spotify Playlist';
-              final plSubtitle = entity['subtitle'] as String? ?? 'Curated by Spotify';
-
-              // Extract cover art
-              String coverArt = '';
-              final coverSources = entity['coverArt']?['sources'] as List?;
-              if (coverSources != null && coverSources.isNotEmpty) {
-                coverArt = coverSources.first['url'] as String? ?? '';
-              }
-              if (coverArt.isEmpty) {
-                final visualImgs = entity['visualIdentity']?['image'] as List?;
-                if (visualImgs != null && visualImgs.isNotEmpty) {
-                  coverArt = visualImgs.last['url'] as String? ?? '';
-                }
-              }
-
-              final rawTracks = entity['trackList'] as List? ?? [];
-              final songs = <Song>[];
-              for (final t in rawTracks) {
-                if (t is Map<String, dynamic>) {
-                  final title = t['title'] as String? ?? '';
-                  final artist = t['subtitle'] as String? ?? 'Various Artists';
-                  final durMs = (t['duration'] as num?)?.toInt() ?? 210000;
-                  final uri = t['uri'] as String? ?? '';
-                  final trackId = uri.startsWith('spotify:track:') ? uri.replaceFirst('spotify:track:', '') : '';
-
-                  if (title.isNotEmpty) {
-                    songs.add(
-                      Song(
-                        id: 'sp_$trackId',
-                        title: title,
-                        artist: artist,
-                        duration: Duration(milliseconds: durMs),
-                        artworkUrl: coverArt,
-                        streamUrl: uri.isNotEmpty ? uri : 'spotify:track:$trackId',
-                        source: 'spotify',
-                      ),
-                    );
-                  }
-                }
-              }
-
-              if (songs.isNotEmpty) {
-                return Playlist(
-                  id: 'sp_$playlistId',
-                  title: plTitle,
-                  description: plSubtitle,
-                  songs: songs,
-                  createdAt: DateTime.now(),
-                  coverUrl: coverArt.isNotEmpty ? coverArt : null,
-                );
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('[SpotifyService] fetchPlaylistEmbed error: $e');
-    }
-    return null;
-  }
-
-  /// Spotube-backed Chart & Playlist fetcher (Spotify Embed with search fallbacks)
+  /// Spotube-backed Chart & Playlist fetcher
   static Future<Playlist?> fetchPlaylist(String playlistId) async {
-    // 1. Resolve curated chart if playlistId is a chart key
+    // 1. Match curated chart
     final matchingChart = curatedCharts.where((c) => c.playlistId == playlistId || c.key == playlistId).firstOrNull;
-    final targetId = matchingChart?.playlistId ?? playlistId;
-
-    // 2. Fetch authentic live tracks via Spotify embed
-    final embedPlaylist = await fetchPlaylistEmbed(targetId);
-    if (embedPlaylist != null && embedPlaylist.songs.isNotEmpty) {
-      if (matchingChart != null) {
-        return embedPlaylist.copyWith(
-          id: 'sp_${matchingChart.key}',
-          title: matchingChart.title,
-          description: matchingChart.subtitle,
-          coverUrl: matchingChart.coverUrl.isNotEmpty ? matchingChart.coverUrl : embedPlaylist.coverUrl,
-        );
-      }
-      return embedPlaylist;
-    }
-
-    // 3. Fallback: Search Spotify catalogue using chart search query
     if (matchingChart != null) {
       final tracks = await searchSpotify(matchingChart.searchQuery, limit: 30);
       if (tracks.isNotEmpty) {
@@ -261,10 +166,10 @@ class SpotifyService {
       }
     }
 
-    // 4. Fallback: Fetch oEmbed metadata for arbitrary Spotify playlist
+    // 2. Fetch oEmbed metadata for arbitrary Spotify playlist
     final spotifyUrl = 'https://open.spotify.com/playlist/$playlistId';
     final meta = await fetchOEmbedMetadata(spotifyUrl);
-    final query = meta?.title ?? 'Top Music Hits';
+    final query = meta?.title ?? 'Top Music Hits 2026';
     final cover = meta?.coverUrl;
 
     final tracks = await searchSpotify(query, limit: 30);

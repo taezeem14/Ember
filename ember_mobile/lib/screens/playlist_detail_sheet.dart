@@ -43,14 +43,10 @@ class PlaylistDetailSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
     // Look up latest state of this playlist
-    final currentPl = playlist.id == 'liked_songs'
-        ? playlist.copyWith(songs: player.favorites)
-        : playlist.id == 'downloaded_songs'
-            ? playlist.copyWith(songs: player.downloads)
-            : player.playlists.firstWhere(
-                (p) => p.id == playlist.id,
-                orElse: () => playlist,
-              );
+    final currentPl = player.playlists.firstWhere(
+      (p) => p.id == playlist.id,
+      orElse: () => playlist,
+    );
 
     return DraggableScrollableSheet(
       initialChildSize: 0.88,

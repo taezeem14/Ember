@@ -35,6 +35,9 @@ class MiniPlayer extends StatelessWidget {
             player.stopPlayback();
           }
         },
+        onLongPress: () {
+          player.stopPlayback();
+        },
         onTap: () {
           Navigator.of(context).push(
             PageRouteBuilder(

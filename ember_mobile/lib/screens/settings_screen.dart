@@ -44,13 +44,14 @@ class SettingsScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: EmberColors.primaryAmber.withValues(alpha: 0.16),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.asset(
+                      'assets/ember_logo.png',
+                      width: 36,
+                      height: 36,
+                      fit: BoxFit.cover,
                     ),
-                    child: const FaIcon(FontAwesomeIcons.gear, color: EmberColors.primaryAmber, size: 18),
                   ),
                   const SizedBox(width: 12),
                   const Text(

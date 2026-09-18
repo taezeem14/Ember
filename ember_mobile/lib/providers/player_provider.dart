@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
@@ -161,11 +160,6 @@ class PlayerProvider extends ChangeNotifier {
         _consecutiveStreamFailures++;
         _isPlaying = false;
         notifyListeners();
-        // Auto-skip unplayable songs if queue has remaining songs and failures < 3
-        if (_queue.length > 1 && _consecutiveStreamFailures < 3) {
-          debugPrint('[PlayerProvider] Auto-advancing past failed stream to maintain playback continuity');
-          skipNext();
-        }
       },
     );
 
@@ -676,20 +670,6 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
-    if (playlistId == 'liked_songs') {
-      final song = _favorites.firstWhere(
-        (s) => s.id == songId,
-        orElse: () => const Song(id: '', title: '', artist: '', duration: Duration.zero, artworkUrl: '', streamUrl: ''),
-      );
-      if (song.id.isNotEmpty) {
-        await toggleFavorite(song);
-      }
-      return;
-    }
-    if (playlistId == 'downloaded_songs') {
-      await deleteDownload(songId);
-      return;
-    }
     final idx = _playlists.indexWhere((p) => p.id == playlistId);
     if (idx != -1) {
       final p = _playlists[idx];
@@ -754,19 +734,6 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> deleteDownload(String songId) async {
-    final downloaded = _downloads.where((s) => s.id == songId).toList();
-    for (final song in downloaded) {
-      if (song.streamUrl.isNotEmpty) {
-        try {
-          final file = File(song.streamUrl);
-          if (file.existsSync()) {
-            file.deleteSync();
-          }
-        } catch (e) {
-          debugPrint('Error deleting downloaded audio file: $e');
-        }
-      }
-    }
     _downloads.removeWhere((s) => s.id == songId);
     await _storageService.saveDownloads(_downloads);
     notifyListeners();

@@ -62,14 +62,28 @@ class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
             pinned: false,
             automaticallyImplyLeading: false,
             titleSpacing: 16,
-            title: Text(
-              _getGreeting(),
-              style: const TextStyle(
-                color: EmberColors.textPrimary,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                letterSpacing: -0.5,
-              ),
+            title: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.asset(
+                    'assets/ember_logo.png',
+                    width: 32,
+                    height: 32,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  _getGreeting(),
+                  style: const TextStyle(
+                    color: EmberColors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ],
             ),
             actions: [
               IconButton(
@@ -107,12 +121,6 @@ class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
                           setState(() => _selectedPill = pill);
                           if (pill == 'Charts') {
                             player.loadSpotifyChart('global_top_50');
-                          } else if (pill == 'Spotify') {
-                            player.loadSpotifyChart('top_hits');
-                          } else if (pill == 'YouTube') {
-                            player.loadYouTubeTrending();
-                          } else if (pill == 'JioSaavn') {
-                            player.loadSaavnHits();
                           }
                         },
                         child: AnimatedContainer(
@@ -143,163 +151,158 @@ class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
             ),
           ),
 
-          // 3. Quick Access 2-Column Grid (Spotify / Charts / All)
-          if (_selectedPill == 'All' || _selectedPill == 'Spotify' || _selectedPill == 'Charts')
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 3.1,
-                ),
-                delegate: SliverChildListDelegate([
-                  _buildQuickAccessCard(
-                    title: 'Liked Songs',
-                    isLikedSongs: true,
-                    onTap: widget.onOpenLibrary,
-                    isPlaying: player.favorites.any((s) => s.id == player.currentSong?.id),
-                  ),
-                  _buildQuickAccessCard(
-                    title: "Today's Top Hits",
-                    imageUrl: 'https://i.scdn.co/image/ab67706f00000002b28c86be566710fa53cf2cc8',
-                    onTap: () => _playSpotifyChart(context, 'top_hits'),
-                  ),
-                  _buildQuickAccessCard(
-                    title: 'Global Top 50',
-                    imageUrl: 'https://charts-images.scdn.co/assets_generated/regional_global_daily_default.jpg',
-                    onTap: () => _playSpotifyChart(context, 'global_top_50'),
-                  ),
-                  _buildQuickAccessCard(
-                    title: 'Viral 50 Global',
-                    imageUrl: 'https://charts-images.scdn.co/assets_generated/viral_global_daily_default.jpg',
-                    onTap: () => _playSpotifyChart(context, 'viral_50'),
-                  ),
-                  _buildQuickAccessCard(
-                    title: 'RapCaviar',
-                    imageUrl: 'https://i.scdn.co/image/ab67706f000000029bb7b01d18bb7b6f6f212282',
-                    onTap: () => _playSpotifyChart(context, 'rapcaviar'),
-                  ),
-                  _buildQuickAccessCard(
-                    title: 'Lo-Fi Beats',
-                    imageUrl: 'https://i.scdn.co/image/ab67706f0000000259b35b62e49c7f9984950ce6',
-                    onTap: () => _playSpotifyChart(context, 'lofi_beats'),
-                  ),
-                ]),
+          // 3. Quick Access 2-Column Grid (6 Recently Played / Flagship Cards)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 3.1,
               ),
+              delegate: SliverChildListDelegate([
+                _buildQuickAccessCard(
+                  title: 'Liked Songs',
+                  isLikedSongs: true,
+                  onTap: widget.onOpenLibrary,
+                  isPlaying: player.favorites.any((s) => s.id == player.currentSong?.id),
+                ),
+                _buildQuickAccessCard(
+                  title: "Today's Top Hits",
+                  imageUrl: 'https://i.scdn.co/image/ab67706f00000002b28c86be566710fa53cf2cc8',
+                  onTap: () => _playSpotifyChart(context, 'top_hits'),
+                ),
+                _buildQuickAccessCard(
+                  title: 'Global Top 50',
+                  imageUrl: 'https://charts-images.scdn.co/assets_generated/regional_global_daily_default.jpg',
+                  onTap: () => _playSpotifyChart(context, 'global_top_50'),
+                ),
+                _buildQuickAccessCard(
+                  title: 'Viral 50 Global',
+                  imageUrl: 'https://charts-images.scdn.co/assets_generated/viral_global_daily_default.jpg',
+                  onTap: () => _playSpotifyChart(context, 'viral_50'),
+                ),
+                _buildQuickAccessCard(
+                  title: 'RapCaviar',
+                  imageUrl: 'https://i.scdn.co/image/ab67706f000000029bb7b01d18bb7b6f6f212282',
+                  onTap: () => _playSpotifyChart(context, 'rapcaviar'),
+                ),
+                _buildQuickAccessCard(
+                  title: 'Lo-Fi Beats',
+                  imageUrl: 'https://i.scdn.co/image/ab67706f0000000259b35b62e49c7f9984950ce6',
+                  onTap: () => _playSpotifyChart(context, 'lofi_beats'),
+                ),
+              ]),
             ),
+          ),
 
           // 4. Section: Featured Spotify Charts Carousel
-          if (_selectedPill == 'All' || _selectedPill == 'Spotify' || _selectedPill == 'Charts') ...[
-            SliverToBoxAdapter(
-              child: _buildSectionHeader(
-                title: 'Featured Spotify Charts',
-                subtitle: 'The hottest tracks on Spotify right now',
-                actionText: 'See all',
-                onAction: widget.onOpenSearch,
+          SliverToBoxAdapter(
+            child: _buildSectionHeader(
+              title: 'Featured Spotify Charts',
+              subtitle: 'The hottest tracks on Spotify right now',
+              actionText: 'See all',
+              onAction: widget.onOpenSearch,
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: 216,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: SpotifyService.curatedCharts.length,
+                itemBuilder: (context, index) {
+                  final chart = SpotifyService.curatedCharts[index];
+                  return _buildChartCarouselCard(chart, () => _playSpotifyChart(context, chart.key));
+                },
               ),
             ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 216,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: SpotifyService.curatedCharts.length,
-                  itemBuilder: (context, index) {
-                    final chart = SpotifyService.curatedCharts[index];
-                    return _buildChartCarouselCard(chart, () => _playSpotifyChart(context, chart.key));
-                  },
-                ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
-          ],
+          ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
           // 5. Section: Trending on YouTube Music
-          if (_selectedPill == 'All' || _selectedPill == 'YouTube') ...[
-            SliverToBoxAdapter(
-              child: _buildSectionHeader(
-                title: 'Trending on YouTube Music',
-                subtitle: 'Top music videos & viral audio tracks',
-                actionText: 'Play all',
-                onAction: () {
-                  if (player.youtubeTracks.isNotEmpty) {
-                    player.playPlaylist(
-                      Playlist(
-                        id: 'yt_trending_all',
-                        title: 'Trending on YouTube Music',
-                        description: 'Top trending tracks on YouTube Music',
-                        songs: player.youtubeTracks,
-                        createdAt: DateTime.now(),
-                        coverUrl: player.youtubeTracks.first.artworkUrl,
-                      ),
-                    );
-                  }
-                },
-              ),
+          SliverToBoxAdapter(
+            child: _buildSectionHeader(
+              title: 'Trending on YouTube Music',
+              subtitle: 'Top music videos & viral audio tracks',
+              actionText: 'Play all',
+              onAction: () {
+                if (player.youtubeTracks.isNotEmpty) {
+                  player.playPlaylist(
+                    Playlist(
+                      id: 'yt_trending_all',
+                      title: 'Trending on YouTube Music',
+                      description: 'Top trending tracks on YouTube Music',
+                      songs: player.youtubeTracks,
+                      createdAt: DateTime.now(),
+                      coverUrl: player.youtubeTracks.first.artworkUrl,
+                    ),
+                  );
+                }
+              },
             ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 200,
-                child: player.isLoadingYouTube
-                    ? const Center(child: CircularProgressIndicator(color: EmberColors.primaryBlue))
-                    : ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: player.youtubeTracks.take(12).length,
-                        itemBuilder: (context, index) {
-                          final track = player.youtubeTracks[index];
-                          return _buildTrackCarouselCard(track, () => player.playSong(track));
-                        },
-                      ),
-              ),
+          ),
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: 200,
+              child: player.isLoadingYouTube
+                  ? const Center(child: CircularProgressIndicator(color: EmberColors.primaryBlue))
+                  : ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: player.youtubeTracks.take(12).length,
+                      itemBuilder: (context, index) {
+                        final track = player.youtubeTracks[index];
+                        return _buildTrackCarouselCard(track, () => player.playSong(track));
+                      },
+                    ),
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
-          ],
+          ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
           // 5b. Section: JioSaavn 320kbps Audiophile Hits
-          if (_selectedPill == 'All' || _selectedPill == 'JioSaavn') ...[
-            SliverToBoxAdapter(
-              child: _buildSectionHeader(
-                title: 'JioSaavn 320kbps Audiophile Hits',
-                subtitle: 'Pristine 320kbps studio audio • Bollywood, Punjabi & Pop',
-                actionText: 'Play all',
-                onAction: () {
-                  if (player.saavnTracks.isNotEmpty) {
-                    player.playCategoryTracks(player.saavnTracks);
-                  }
-                },
-              ),
+          SliverToBoxAdapter(
+            child: _buildSectionHeader(
+              title: 'JioSaavn 320kbps Audiophile Hits',
+              subtitle: 'Pristine 320kbps studio audio • Bollywood, Punjabi & Pop',
+              actionText: 'Play all',
+              onAction: () {
+                if (player.saavnTracks.isNotEmpty) {
+                  player.playCategoryTracks(player.saavnTracks);
+                }
+              },
             ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 200,
-                child: player.isLoadingSaavn
-                    ? const Center(child: CircularProgressIndicator(color: EmberColors.primaryBlue))
-                    : ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: player.saavnTracks.take(12).length,
-                        itemBuilder: (context, index) {
-                          final track = player.saavnTracks[index];
-                          return _buildTrackCarouselCard(track, () => player.playSong(track));
-                        },
-                      ),
-              ),
+          ),
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: 200,
+              child: player.isLoadingSaavn
+                  ? const Center(child: CircularProgressIndicator(color: EmberColors.primaryBlue))
+                  : ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: player.saavnTracks.take(12).length,
+                      itemBuilder: (context, index) {
+                        final track = player.saavnTracks[index];
+                        return _buildTrackCarouselCard(track, () => player.playSong(track));
+                      },
+                    ),
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
-          ],
+          ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
           // 6. Section: Spotify Curated Tracklist (Today's Top Hits)
-          if (_selectedPill == 'All' || _selectedPill == 'Spotify' || _selectedPill == 'Charts') ...[
-            SliverToBoxAdapter(
-              child: _buildSectionHeader(
-                title: "Today's Top Hits",
-                subtitle: 'Curated by Spotify • Streamed in High Definition',
-              ),
+          SliverToBoxAdapter(
+            child: _buildSectionHeader(
+              title: "Today's Top Hits",
+              subtitle: 'Curated by Spotify • Streamed in High Definition',
             ),
+          ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: SliverList(
@@ -402,7 +405,6 @@ class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
               ),
             ),
           ),
-        ],
 
           // Extra bottom padding for floating mini-player & bottom nav
           const SliverToBoxAdapter(child: SizedBox(height: 150)),

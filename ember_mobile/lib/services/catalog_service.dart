@@ -94,8 +94,8 @@ class CatalogService {
       final encryptedBytes = base64.decode(encryptedMediaUrl.trim());
       final decryptedBytes = des.decrypt(encryptedBytes);
       final rawUrl = utf8.decode(decryptedBytes).trim();
-      // Upgrade from standard 96kbps/160kbps to 320kbps high-definition full song stream
-      return rawUrl.replaceAll(RegExp(r'_(?:96|160)\.(mp4|m4a)'), r'_320.$1');
+      // Upgrade from standard 96kbps to 320kbps high-definition full song stream
+      return rawUrl.replaceAll('_96.mp4', '_320.mp4');
     } catch (e) {
       debugPrint('Error decrypting JioSaavn media URL: $e');
       return null;
@@ -122,11 +122,8 @@ class CatalogService {
         .replaceAll('&quot;', '"')
         .replaceAll('&amp;', '&')
         .replaceAll('&#039;', "'")
-        .replaceAll('&#39;', "'")
-        .replaceAll('&apos;', "'")
         .replaceAll('&lt;', '<')
         .replaceAll('&gt;', '>')
-        .replaceAll('&nbsp;', ' ')
         .trim();
   }
 
@@ -220,7 +217,7 @@ class CatalogService {
       return _categoryCache['trending']!;
     }
 
-    final tracks = await searchOnline('Trending Top Songs ${DateTime.now().year}', limit: limit);
+    final tracks = await searchOnline('Trending Top Songs 2026', limit: limit);
     if (tracks.isNotEmpty) {
       _categoryCache['trending'] = tracks;
       return tracks;
@@ -325,18 +322,16 @@ class CatalogService {
     required String candidateTitle,
     required String candidateArtist,
   }) {
-    String normalize(String s) => s.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{N}]', unicode: true), '');
+    String normalize(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
 
     final normTargetTitle = normalize(targetTitle);
     final normCandTitle = normalize(candidateTitle);
 
     if (normTargetTitle.isEmpty || normCandTitle.isEmpty) return false;
 
-    bool titleMatches = normTargetTitle == normCandTitle;
-    if (!titleMatches && normTargetTitle.length >= 5) {
-      titleMatches = normCandTitle.contains(normTargetTitle) ||
-          normTargetTitle.contains(normCandTitle);
-    }
+    bool titleMatches = normTargetTitle == normCandTitle ||
+        normCandTitle.contains(normTargetTitle) ||
+        normTargetTitle.contains(normCandTitle);
 
     if (!titleMatches) {
       final targetTokens = targetTitle.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toSet();
@@ -355,18 +350,11 @@ class CatalogService {
     final normCandArtist = normalize(candidateArtist);
 
     if (normTargetArtist.isNotEmpty) {
-      // Skip artist verification for placeholder artist names
-      final isPlaceholderArtist = targetArtist.trim().toLowerCase() == 'unknown artist' ||
-          targetArtist.trim().toLowerCase() == 'unknown' ||
-          targetArtist.trim().isEmpty;
-      if (!isPlaceholderArtist) {
-        // Split on word-boundary ' x ' (collaboration delimiter), commas, ampersands, slashes, whitespace
-        final artistTokens = targetArtist.toLowerCase().split(RegExp(r'(?:\s+x\s+|[\s,&/]+)')).where((w) => w.length > 2).toList();
-        if (artistTokens.isNotEmpty) {
-          final matchesAny = artistTokens.any((token) =>
-              normCandArtist.contains(normalize(token)) || normCandTitle.contains(normalize(token)));
-          if (!matchesAny) return false;
-        }
+      final artistTokens = targetArtist.toLowerCase().split(RegExp(r'[\s,&x]+')).where((w) => w.length > 2).toList();
+      if (artistTokens.isNotEmpty) {
+        final matchesAny = artistTokens.any((token) =>
+            normCandArtist.contains(normalize(token)) || normCandTitle.contains(normalize(token)));
+        if (!matchesAny) return false;
       }
     }
 

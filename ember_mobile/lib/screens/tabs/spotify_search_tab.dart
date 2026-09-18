@@ -331,7 +331,12 @@ class _SpotifySearchTabState extends State<SpotifySearchTab> {
                                     );
                                   },
                                   onOptions: () {
-                                    TrackOptionsSheet.show(context, song);
+                                    showModalBottomSheet(
+                                      context: context,
+                                      backgroundColor: Colors.transparent,
+                                      isScrollControlled: true,
+                                      builder: (_) => TrackOptionsSheet(song: song),
+                                    );
                                   },
                                 );
                               },

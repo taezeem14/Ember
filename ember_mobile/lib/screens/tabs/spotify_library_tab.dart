@@ -541,7 +541,12 @@ class _SpotifyLibraryTabState extends State<SpotifyLibraryTab> {
                                 IconButton(
                                   icon: const FaIcon(FontAwesomeIcons.ellipsisVertical, size: 14, color: EmberColors.textMuted),
                                   onPressed: () {
-                                    TrackOptionsSheet.show(context, song);
+                                    showModalBottomSheet(
+                                      context: context,
+                                      backgroundColor: Colors.transparent,
+                                      isScrollControlled: true,
+                                      builder: (_) => TrackOptionsSheet(song: song),
+                                    );
                                   },
                                 ),
                               ],
