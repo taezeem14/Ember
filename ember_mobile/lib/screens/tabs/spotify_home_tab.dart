@@ -26,8 +26,6 @@ class SpotifyHomeTab extends StatefulWidget {
 }
 
 class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
-  String _selectedPill = 'All';
-
   String _getGreeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) return 'Good morning';
@@ -105,51 +103,6 @@ class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
             ],
           ),
 
-          // 2. Filter Pills Row (All, Spotify, YouTube, JioSaavn, Charts)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: ['All', 'Spotify', 'YouTube', 'JioSaavn', 'Charts'].map((pill) {
-                    final isSelected = _selectedPill == pill;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() => _selectedPill = pill);
-                          if (pill == 'Charts') {
-                            player.loadSpotifyChart('global_top_50');
-                          }
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                          decoration: BoxDecoration(
-                            color: isSelected ? EmberColors.primaryBlue : EmberColors.surfaceContainerLow,
-                            borderRadius: BorderRadius.circular(9999),
-                            border: Border.all(
-                              color: isSelected ? EmberColors.primaryBlue : EmberColors.outlineVariant,
-                              width: 1,
-                            ),
-                          ),
-                          child: Text(
-                            pill,
-                            style: TextStyle(
-                              color: isSelected ? Colors.black : EmberColors.textPrimary,
-                              fontSize: 13,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ),
-          ),
 
           // 3. Quick Access 2-Column Grid (6 Recently Played / Flagship Cards)
           SliverPadding(
@@ -197,11 +150,11 @@ class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
             ),
           ),
 
-          // 4. Section: Featured Spotify Charts Carousel
+          // 4. Section: Featured Top Charts Carousel
           SliverToBoxAdapter(
             child: _buildSectionHeader(
-              title: 'Featured Spotify Charts',
-              subtitle: 'The hottest tracks on Spotify right now',
+              title: 'Featured Top Charts',
+              subtitle: 'The hottest chart-topping tracks right now',
               actionText: 'See all',
               onAction: widget.onOpenSearch,
             ),
@@ -223,19 +176,19 @@ class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
 
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
-          // 5. Section: Trending on YouTube Music
+          // 5. Section: Trending Hits & Hot Releases
           SliverToBoxAdapter(
             child: _buildSectionHeader(
-              title: 'Trending on YouTube Music',
-              subtitle: 'Top music videos & viral audio tracks',
+              title: 'Trending Hits & Hot Releases',
+              subtitle: 'Top viral tracks & popular music',
               actionText: 'Play all',
               onAction: () {
                 if (player.youtubeTracks.isNotEmpty) {
                   player.playPlaylist(
                     Playlist(
-                      id: 'yt_trending_all',
-                      title: 'Trending on YouTube Music',
-                      description: 'Top trending tracks on YouTube Music',
+                      id: 'trending_hits_all',
+                      title: 'Trending Hits',
+                      description: 'Top trending tracks and hot releases',
                       songs: player.youtubeTracks,
                       createdAt: DateTime.now(),
                       coverUrl: player.youtubeTracks.first.artworkUrl,
@@ -264,10 +217,10 @@ class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
 
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
-          // 5b. Section: JioSaavn 320kbps Audiophile Hits
+          // 5b. Section: 320kbps Audiophile Hits
           SliverToBoxAdapter(
             child: _buildSectionHeader(
-              title: 'JioSaavn 320kbps Audiophile Hits',
+              title: '320kbps Audiophile Hits',
               subtitle: 'Pristine 320kbps studio audio • Bollywood, Punjabi & Pop',
               actionText: 'Play all',
               onAction: () {
@@ -296,11 +249,11 @@ class _SpotifyHomeTabState extends State<SpotifyHomeTab> {
 
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
-          // 6. Section: Spotify Curated Tracklist (Today's Top Hits)
+          // 6. Section: Curated Tracklist (Today's Top Hits)
           SliverToBoxAdapter(
             child: _buildSectionHeader(
               title: "Today's Top Hits",
-              subtitle: 'Curated by Spotify • Streamed in High Definition',
+              subtitle: 'Curated Hits • Streamed in 320kbps High Definition',
             ),
           ),
           SliverPadding(

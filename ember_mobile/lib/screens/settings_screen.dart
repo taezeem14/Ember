@@ -312,9 +312,9 @@ class SettingsContent extends StatelessWidget {
         const _SettingsTile(
           icon: FontAwesomeIcons.music,
           iconColor: EmberColors.primaryAmber,
-          title: 'Spotify & YouTube Music Engine',
-          subtitle: 'Spotube-grade hardware-accelerated Opus/AAC dual-engine',
-          trailing: Text('Lossless/HD', style: TextStyle(color: EmberColors.primaryAmberHi, fontSize: 12, fontWeight: FontWeight.bold)),
+          title: 'Pure JioSaavn 320kbps Audio Engine',
+          subtitle: 'High-definition 320kbps direct CDN streaming with multi-bitrate fallback',
+          trailing: Text('320k HD', style: TextStyle(color: EmberColors.primaryAmberHi, fontSize: 12, fontWeight: FontWeight.bold)),
           onTap: null,
         ),
         const _SettingsTile(

@@ -201,7 +201,7 @@ class _SpotifyLibraryTabState extends State<SpotifyLibraryTab> {
     final pl = Playlist(
       id: 'liked_songs',
       title: 'Liked Songs',
-      description: 'Your favorite Spotify & YouTube tracks',
+      description: 'Your favorite saved songs',
       songs: player.favorites,
       createdAt: DateTime.now(),
     );
