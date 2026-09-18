@@ -107,13 +107,8 @@ class Song {
     final s = song.streamUrl.toLowerCase();
     final i = song.id.toLowerCase();
 
-    if (i.startsWith('lofi_') ||
-        i.startsWith('rain_') ||
-        i.startsWith('jazz_') ||
-        i.startsWith('fire_') ||
-        i.startsWith('amb_') ||
-        i.startsWith('aut_') ||
-        i.startsWith('mock_')) {
+    if (i.startsWith('mock_') ||
+        RegExp(r'^(?:lofi|rain|jazz|fire|amb|aut)_\d{1,3}$').hasMatch(i)) {
       return true;
     }
 
@@ -133,15 +128,15 @@ class Song {
       return true;
     }
 
-    if (a.contains('lofi coffee') ||
-        a.contains('komorebi') ||
+    if (a.contains('lofi coffee sessions') ||
+        a == 'komorebi' ||
         a.contains('ember collective') ||
-        a.contains('petrichor') ||
-        a.contains('sora trio') ||
-        a.contains('amber quartet') ||
-        a.contains('cedar & pine') ||
-        a.contains('solaris drift') ||
-        a.contains('harvest moon')) {
+        a == 'petrichor' ||
+        a == 'sora trio' ||
+        a == 'amber quartet' ||
+        a == 'cedar & pine' ||
+        a == 'solaris drift' ||
+        a == 'harvest moon ambient') {
       return true;
     }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
@@ -136,7 +137,7 @@ class PlayerProvider extends ChangeNotifier {
         return i;
       }
     }
-    return 0;
+    return -1;
   }
 
   void _init() {
@@ -216,7 +217,7 @@ class PlayerProvider extends ChangeNotifier {
 
   Future<void> _handleSongCompleted() async {
     // Guard against infinite skip loops when consecutive songs fail to load
-    _consecutiveStreamFailures++;
+    _consecutiveStreamFailures = 0;
     if (_consecutiveStreamFailures > _maxConsecutiveFailures) {
       debugPrint('Stopping auto-advance: $_consecutiveStreamFailures consecutive stream failures');
       _consecutiveStreamFailures = 0;
@@ -587,6 +588,7 @@ class PlayerProvider extends ChangeNotifier {
   // Queue manipulation
   void playNext(Song song) {
     final existingIdx = _queue.indexWhere((s) => s.id == song.id);
+    if (existingIdx == _currentIndex) return; // Don't re-insert the currently playing song
     if (existingIdx != -1) {
       _queue.removeAt(existingIdx);
       if (existingIdx < _currentIndex) _currentIndex--;
@@ -617,7 +619,7 @@ class PlayerProvider extends ChangeNotifier {
     } else if (index < _currentIndex) {
       _currentIndex--;
     } else if (_currentIndex >= _queue.length) {
-      _currentIndex = (_queue.length - 1).clamp(0, _queue.length);
+      _currentIndex = _queue.isEmpty ? 0 : (_queue.length - 1).clamp(0, _queue.length - 1);
     }
     notifyListeners();
   }
@@ -669,6 +671,20 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
+    if (playlistId == 'liked_songs') {
+      final song = _favorites.firstWhere(
+        (s) => s.id == songId,
+        orElse: () => const Song(id: '', title: '', artist: '', duration: Duration.zero, artworkUrl: '', streamUrl: ''),
+      );
+      if (song.id.isNotEmpty) {
+        await toggleFavorite(song);
+      }
+      return;
+    }
+    if (playlistId == 'downloaded_songs') {
+      await deleteDownload(songId);
+      return;
+    }
     final idx = _playlists.indexWhere((p) => p.id == playlistId);
     if (idx != -1) {
       final p = _playlists[idx];
@@ -733,6 +749,19 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> deleteDownload(String songId) async {
+    final downloaded = _downloads.where((s) => s.id == songId).toList();
+    for (final song in downloaded) {
+      if (song.streamUrl.isNotEmpty) {
+        try {
+          final file = File(song.streamUrl);
+          if (file.existsSync()) {
+            file.deleteSync();
+          }
+        } catch (e) {
+          debugPrint('Error deleting downloaded audio file: $e');
+        }
+      }
+    }
     _downloads.removeWhere((s) => s.id == songId);
     await _storageService.saveDownloads(_downloads);
     notifyListeners();
@@ -786,6 +815,7 @@ class PlayerProvider extends ChangeNotifier {
   void _recordHistory(Song song) {
     _history.removeWhere((s) => s.id == song.id);
     _history.insert(0, song);
+    if (_history.length > 200) _history.removeLast();
     _storageService.saveHistory(_history);
   }
 

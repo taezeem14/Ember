@@ -45,6 +45,8 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
   /// Guard to prevent ProcessingState.completed from firing _onCompleted
   /// multiple times for the same track (fixes the "shifts songs by itself" bug)
   bool _completionHandled = false;
+  bool _wasPlayingBeforeInterrupt = false;
+  double _preDuckVolume = 1.0;
 
   bool _eqEnabled = true;
   double _bassBoost = 0.35;
@@ -88,8 +90,10 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
 
       session.interruptionEventStream.listen((event) {
         if (event.begin) {
+          _wasPlayingBeforeInterrupt = _player.playing;
           switch (event.type) {
             case AudioInterruptionType.duck:
+              _preDuckVolume = _player.volume;
               _player.setVolume(0.35);
               break;
             case AudioInterruptionType.pause:
@@ -100,10 +104,10 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         } else {
           switch (event.type) {
             case AudioInterruptionType.duck:
-              _player.setVolume(1.0);
+              _player.setVolume(_preDuckVolume);
               break;
             case AudioInterruptionType.pause:
-              play();
+              if (_wasPlayingBeforeInterrupt) play();
               break;
             case AudioInterruptionType.unknown:
               break;
@@ -170,14 +174,9 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed && !_completionHandled) {
         final pos = _player.position;
-        final dur = _player.duration;
-        // Verify playback actually progressed to prevent instant auto-advance loops on failed loads or 0s resets
-        final hasPlayed = pos.inSeconds >= 3;
-        final reachedEnd = dur != null && dur > const Duration(seconds: 5)
-            ? pos >= (dur - const Duration(seconds: 4))
-            : hasPlayed;
-
-        if (hasPlayed && reachedEnd) {
+        // Trust the decoder: ProcessingState.completed means EOF was reached.
+        // Only require > 1s of actual playback to guard against instant-fail loads.
+        if (pos.inSeconds >= 1) {
           _completionHandled = true;
           _onCompleted?.call();
         }
@@ -279,6 +278,13 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
       }
     } catch (e) {
       debugPrint('Playback error: $e');
+      playbackState.add(
+        playbackState.value.copyWith(
+          processingState: AudioProcessingState.idle,
+          playing: false,
+        ),
+      );
+      _onPlaybackFailed?.call(song);
     }
   }
 
@@ -290,13 +296,13 @@ class EmberAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler 
         // Android's native Equalizer HAL applies 6-12 dB of internal digital attenuation to avoid clipping.
         // To prevent the sound from being suppressed when EQ is enabled, we engage Android's hardware LoudnessEnhancer
         // as an intelligent makeup gain stage (+5.0 dB to +8.5 dB), giving full punch, volume parity, and analog warmth.
-        final makeupGain = (0.50 + (_bassBoost * 0.35)).clamp(0.2, 1.0);
+        final makeupGain = (5.0 + (_bassBoost * 3.5)).clamp(2.0, 10.0);
         await _loudnessEnhancer.setTargetGain(makeupGain);
         await _loudnessEnhancer.setEnabled(true);
       } else {
         // When EQ is disabled, restore transparent flat output so volume transitions smoothly
         if (_bassBoost > 0.05) {
-          await _loudnessEnhancer.setTargetGain((_bassBoost * 0.35).clamp(0.0, 1.0));
+          await _loudnessEnhancer.setTargetGain((_bassBoost * 5.0).clamp(0.0, 6.0));
           await _loudnessEnhancer.setEnabled(true);
         } else {
           await _loudnessEnhancer.setEnabled(false);

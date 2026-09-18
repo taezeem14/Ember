@@ -24,8 +24,15 @@ class _SpotifyShellScreenState extends State<SpotifyShellScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: EmberColors.obsidianBase,
+    return PopScope(
+      canPop: _currentIndex == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _currentIndex != 0) {
+          setState(() => _currentIndex = 0);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: EmberColors.obsidianBase,
       body: Stack(
         children: [
           // 1. Tab Views
@@ -101,8 +108,9 @@ class _SpotifyShellScreenState extends State<SpotifyShellScreen> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class _BottomNavItem extends StatelessWidget {
